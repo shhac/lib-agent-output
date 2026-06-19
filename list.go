@@ -14,8 +14,10 @@ import (
 //
 // The caller supplies the metadata map and its key names (e.g.
 // MetaKeyPagination), so WriteList imposes no policy on whether meta keys are
-// @-prefixed or where pagination lives — it just renders what it's given.
-func WriteList(w io.Writer, format Format, items []any, meta map[string]any, prune bool) error {
+// @-prefixed or where pagination lives — it just renders what it's given. The
+// prune Pruner (nil for none) shapes each record; the envelope is never pruned,
+// so an empty "data" list survives.
+func WriteList(w io.Writer, format Format, items []any, meta map[string]any, prune Pruner) error {
 	items = pruneItems(items, prune)
 
 	if format == FormatNDJSON {
@@ -38,16 +40,16 @@ func WriteList(w io.Writer, format Format, items []any, meta map[string]any, pru
 		envelope[k] = v
 	}
 	// The envelope itself is not pruned: an empty "data" list must survive.
-	return Print(w, envelope, format, false)
+	return Print(w, envelope, format, nil)
 }
 
-func pruneItems(items []any, prune bool) []any {
-	if !prune {
+func pruneItems(items []any, prune Pruner) []any {
+	if prune == nil {
 		return items
 	}
 	out := make([]any, len(items))
 	for i, it := range items {
-		out[i] = pruneValue(it)
+		out[i] = applyPrune(it, prune)
 	}
 	return out
 }

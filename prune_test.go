@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestPruneDropsEmptiesFromMaps(t *testing.T) {
+func TestPruneEmptyDropsEmptiesFromMaps(t *testing.T) {
 	in := map[string]any{
 		"id":     "x",
 		"nil":    nil,
@@ -15,7 +15,7 @@ func TestPruneDropsEmptiesFromMaps(t *testing.T) {
 		"keep":   "v",
 		"nested": map[string]any{"a": "1", "b": nil},
 	}
-	got := Prune(in).(map[string]any)
+	got := PruneEmpty(in).(map[string]any)
 
 	for _, dropped := range []string{"nil", "blank", "emptyM", "emptyS"} {
 		if _, ok := got[dropped]; ok {
@@ -34,16 +34,42 @@ func TestPruneDropsEmptiesFromMaps(t *testing.T) {
 	}
 }
 
-func TestPrunePreservesTopLevelEmptySlice(t *testing.T) {
-	got := Prune([]any{})
+func TestPruneEmptyPreservesTopLevelEmptySlice(t *testing.T) {
+	got := PruneEmpty([]any{})
 	if !reflect.DeepEqual(got, []any{}) {
 		t.Errorf("top-level empty slice should be preserved, got %#v", got)
 	}
 }
 
-func TestPruneDropsNilSliceElements(t *testing.T) {
-	got := Prune([]any{"a", nil, "b"}).([]any)
+func TestPruneEmptyDropsNilSliceElements(t *testing.T) {
+	got := PruneEmpty([]any{"a", nil, "b"}).([]any)
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Errorf("nil slice elements should be dropped, got %#v", got)
+	}
+}
+
+func TestPruneNilsDropsNilsKeepsEmpties(t *testing.T) {
+	in := map[string]any{
+		"id":     "x",
+		"nilval": nil,
+		"blank":  "",
+		"emptyM": map[string]any{},
+		"emptyS": []any{},
+	}
+	got := PruneNils(in).(map[string]any)
+	if _, ok := got["nilval"]; ok {
+		t.Error("PruneNils should drop nil")
+	}
+	for _, kept := range []string{"id", "blank", "emptyM", "emptyS"} {
+		if _, ok := got[kept]; !ok {
+			t.Errorf("PruneNils should keep %q (only nils are dropped)", kept)
+		}
+	}
+}
+
+func TestPruneNilsKeepsAllSliceElements(t *testing.T) {
+	got := PruneNils([]any{"a", nil, "b"}).([]any)
+	if len(got) != 3 {
+		t.Errorf("PruneNils keeps all slice elements (incl nil), got %#v", got)
 	}
 }

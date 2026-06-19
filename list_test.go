@@ -12,7 +12,7 @@ func TestWriteListNDJSONStreamsRecordsThenMeta(t *testing.T) {
 	items := []any{map[string]any{"id": "a"}, map[string]any{"id": "b"}}
 	meta := map[string]any{MetaKeyPagination: Pagination{HasMore: true, NextCursor: "c"}}
 
-	if err := WriteList(&buf, FormatNDJSON, items, meta, false); err != nil {
+	if err := WriteList(&buf, FormatNDJSON, items, meta, nil); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
@@ -30,7 +30,7 @@ func TestWriteListJSONEnvelope(t *testing.T) {
 	items := []any{map[string]any{"id": "a"}}
 	meta := map[string]any{MetaKeyPagination: map[string]any{"has_more": false}}
 
-	if err := WriteList(&buf, FormatJSON, items, meta, false); err != nil {
+	if err := WriteList(&buf, FormatJSON, items, meta, nil); err != nil {
 		t.Fatal(err)
 	}
 	var env map[string]any
@@ -48,7 +48,7 @@ func TestWriteListJSONEnvelope(t *testing.T) {
 
 func TestWriteListJSONKeepsEmptyDataList(t *testing.T) {
 	var buf bytes.Buffer
-	if err := WriteList(&buf, FormatJSON, []any{}, nil, true); err != nil {
+	if err := WriteList(&buf, FormatJSON, []any{}, nil, PruneEmpty); err != nil {
 		t.Fatal(err)
 	}
 	var env map[string]any
@@ -62,7 +62,7 @@ func TestWriteListJSONKeepsEmptyDataList(t *testing.T) {
 
 func TestWriteListUnregisteredFormatErrors(t *testing.T) {
 	var buf bytes.Buffer
-	err := WriteList(&buf, FormatYAML, []any{map[string]any{"id": "a"}}, nil, false)
+	err := WriteList(&buf, FormatYAML, []any{map[string]any{"id": "a"}}, nil, nil)
 	if err == nil {
 		t.Error("WriteList should propagate the error for an unregistered encoder")
 	}

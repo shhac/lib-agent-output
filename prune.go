@@ -2,25 +2,54 @@ package output
 
 import "strings"
 
-// Prune returns a copy of v with "empty" values removed, matching the family's
-// compact-projection convention: nil, empty or whitespace-only strings, empty
-// maps, and empty slices are dropped from maps; nil elements are dropped from
-// slices. A top-level empty slice is preserved — an empty list is meaningful
-// output, whereas an empty field within an object is just noise.
+// Pruner is a content-shaping policy: it returns a copy of a JSON-decoded value
+// with some "empty" nodes removed. WHICH nodes count as empty is a policy
+// decision the producer owns — an empty string or null can be meaningful in one
+// API and noise in another. Pass one of the provided pruners (PruneNils,
+// PruneEmpty), your own, or nil for no pruning.
 //
-// Prune operates on JSON-decoded values (map[string]any, []any, scalars); pass
-// arbitrary structs through json round-tripping first, or use Print/PrintJSON,
-// which do that for you.
-//
-// Prune is opt-in by design. A producer that must preserve nulls — fixed
-// tabular columns, where a missing key and a null mean different things —
-// simply does not call it.
-func Prune(v any) any {
+// Pruners operate on JSON-decoded values (map[string]any, []any, scalars);
+// Print/PrintJSON/WriteList normalize structs via a JSON round-trip before
+// applying the pruner, so you can pass typed values to them directly.
+type Pruner func(any) any
+
+// PruneNils drops nil values from maps, leaving empty strings, empty maps, and
+// empty slices — and nil slice elements — intact. Use it when an empty or null
+// value is meaningful and distinct from an absent one (e.g. fixed columns, or
+// an API where present-but-empty differs from omitted).
+func PruneNils(v any) any {
 	switch val := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(val))
 		for k, e := range val {
-			pe := Prune(e)
+			if e == nil {
+				continue
+			}
+			out[k] = PruneNils(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, e := range val {
+			out[i] = PruneNils(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// PruneEmpty drops nils, empty or whitespace-only strings, empty maps, and empty
+// slices from maps; and nil elements from slices. A top-level empty slice is
+// preserved — an empty list is meaningful output, whereas an empty field within
+// an object is just noise. This is the most aggressive, most token-efficient
+// compact projection.
+func PruneEmpty(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, e := range val {
+			pe := PruneEmpty(e)
 			if isEmpty(pe) {
 				continue
 			}
@@ -30,7 +59,7 @@ func Prune(v any) any {
 	case []any:
 		out := make([]any, 0, len(val))
 		for _, e := range val {
-			pe := Prune(e)
+			pe := PruneEmpty(e)
 			if pe == nil {
 				continue
 			}

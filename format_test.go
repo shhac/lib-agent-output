@@ -42,7 +42,7 @@ func TestResolveFormat(t *testing.T) {
 func TestPrintJSONPrunesAndKeepsHTML(t *testing.T) {
 	var buf bytes.Buffer
 	in := map[string]any{"url": "https://x/?a=1&b=2", "empty": "", "nested": map[string]any{}}
-	if err := PrintJSON(&buf, in, true); err != nil {
+	if err := PrintJSON(&buf, in, PruneEmpty); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -57,7 +57,7 @@ func TestPrintJSONPrunesAndKeepsHTML(t *testing.T) {
 func TestPrintYAMLNeedsRegisteredEncoder(t *testing.T) {
 	var buf bytes.Buffer
 	// No encoder registered for an unknown format → error.
-	if err := Print(&buf, map[string]any{"a": 1}, Format("toml"), false); err == nil {
+	if err := Print(&buf, map[string]any{"a": 1}, Format("toml"), nil); err == nil {
 		t.Error("Print with no registered encoder should error")
 	}
 
@@ -66,7 +66,7 @@ func TestPrintYAMLNeedsRegisteredEncoder(t *testing.T) {
 		return []byte("ENCODED"), nil
 	})
 	buf.Reset()
-	if err := Print(&buf, map[string]any{"a": 1}, Format("fake"), false); err != nil {
+	if err := Print(&buf, map[string]any{"a": 1}, Format("fake"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if buf.String() != "ENCODED" {

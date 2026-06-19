@@ -97,15 +97,20 @@ broad near-drop-in. **Resolved: broad, but disciplined.**
   library, so it stays genuinely zero-dependency.
 - The minimal case's valid point — pruning and envelope shape are *policy* the
   repos legitimately disagree on (lin strips empties, vercel only nils, sql
-  preserves nulls deliberately) — is handled by making every presentation
-  helper **opt-in**: `Prune` is a function you choose to call, and `WriteList`
-  takes the caller's own meta-key names, so it blesses no envelope winner.
+  preserves nulls deliberately) — is handled by making the policy an explicit,
+  caller-supplied choice. Pruning is a `Pruner` value passed to `Print`/
+  `WriteList` (`PruneNils`, `PruneEmpty`, your own, or `nil`), not a baked-in
+  default or a boolean that silently picks one; and `WriteList` takes the
+  caller's own meta-key names, so it blesses no envelope winner. (The original
+  v0.1.0 used a single `Prune` + a `prune bool`; v0.2.0 externalized the policy
+  to `Pruner` precisely because *which* values are "empty" is the producer's
+  business decision, not this package's.)
 - The deciding factor: a types-only package leaves the *most-copied,
   most-drifted* code (format routing, prune, envelope) uncovered, so no CLI
   could actually delete its `output.go`. That would unify the ~5% that already
   agrees and leave the ~95% that drifted — not convergence.
 
 So the package ships the wire contract **plus** opt-in, zero-dep, domain-free
-helpers (`Format`/`ParseFormat`/`ResolveFormat`, `Prune`, `Print`/`PrintJSON`,
-`WriteList`, `RegisterEncoder`). Domain-specific concerns (redaction,
+helpers (`Format`/`ParseFormat`/`ResolveFormat`, the `Pruner` policies,
+`Print`/`PrintJSON`, `WriteList`, `RegisterEncoder`). Domain-specific concerns (redaction,
 truncation field-sets, CSV) stay in the CLIs.

@@ -22,7 +22,7 @@ intend.
   (`WriteItem`/`WriteMetaLine`/`WritePagination`), `Pagination`, `WriteNotice`,
   `MetaKeyPagination`.
 - Opt-in, zero-dep helpers: `Format` + `ParseFormat`/`ResolveFormat`, `Print`,
-  `PrintJSON`, `WriteList`, `Prune`.
+  `PrintJSON`, `WriteList`, and the `Pruner` policies (`PruneNils`/`PruneEmpty`).
 
 **Stays in your CLI (domain-specific — the shared module deliberately won't take it):**
 
@@ -82,10 +82,11 @@ mapping (yours on the left — names may vary slightly per repo):
 | `Pagination` | `output.Pagination` |
 | `Format`, `FormatJSON/YAML/NDJSON` | same |
 | `ParseFormat`, `ResolveFormat(flag, def)` | same |
-| `Print(w, data, format, prune)` | same |
-| `PrintJSON` | same |
-| paginated-list helper (`PrintList`/`emitList`/`printList`) | `output.WriteList(w, format, items, meta, prune)` |
-| `pruneNulls` / `pruneEmpty` | `output.Prune` — **but check semantics (gotcha #2)** |
+| `Print(w, data, format, prune)` | `output.Print(w, data, format, prune)` — `prune` is now a `Pruner`, not a `bool` (gotcha #2) |
+| `PrintJSON` | same — `prune` is a `Pruner` |
+| paginated-list helper (`PrintList`/`emitList`/`printList`) | `output.WriteList(w, format, items, meta, prune Pruner)` |
+| `pruneNulls` (nil-only) | `output.PruneNils` |
+| `pruneEmpty` (nil + empties) | `output.PruneEmpty` |
 | `Stdout()/Stderr()/SetWriters()` test-injection globals | not provided — pass `io.Writer` explicitly, or keep a tiny local shim |
 | `walkTree`, `normalizeYAMLNumbers` | not provided — keep locally; used by your YAML encoder (gotcha #3) |
 | redaction, truncation, CSV | not provided — **stays yours** |
@@ -164,22 +165,26 @@ is a **rename, not a wire change**. If your CLI has error-classification helpers
 mapping), those are *yours* — keep them, but have them build/return
 `output.Error`.
 
-### 2. Prune semantics may differ — verify the output diff
+### 2. Prune is a policy you pass — match yours exactly
 
-This is the most common silent behavior change. Family copies vary:
+Which values count as "empty enough to drop" is a content decision, and the
+family legitimately disagrees: `agent-sql` preserves nulls (a null column ≠ a
+missing one), most CLIs drop nils only, some also drop empty strings/slices. So
+`output` does **not** bake in a default — pruning is a `Pruner` you pass to
+`Print`/`WriteList` (or `nil`):
 
-- Some prune **only nils** from maps (`pruneNulls`).
-- `output.Prune` is **more aggressive**: it also drops empty/whitespace-only
-  strings, empty maps, and empty slices (within maps; a top-level empty list is
-  preserved).
+| Your old behavior | Pass this | Result |
+|---|---|---|
+| nil-only (`pruneNulls`) | `output.PruneNils` | identical bytes — zero-diff migration |
+| nil + empty strings/maps/slices | `output.PruneEmpty` | the most compact projection |
+| preserve everything (tabular nulls) | `nil` | nothing dropped |
+| something bespoke | your own `func(any) any` | your rules |
 
-If your CLI used nil-only pruning, switching to `output.Prune` will **drop
-empty-string and empty-slice fields** from compact output. That may be exactly
-what you want (more token-efficient) — or it may remove a field a downstream
-consumer relied on. **Decide deliberately**, and confirm with a golden-output
-diff (Step 3). If you must keep the looser behavior, keep your own prune
-function and pass `prune: false` to `output.Print`/`WriteList`, pruning yourself
-first.
+Because the policy is explicit, there's no silent change to hunt for: pass the
+`Pruner` that matches what your CLI did, and the output is unchanged. (Still
+worth a golden diff per Step 3, but the prune line is no longer the trap it used
+to be.) Note the pruner applies before *every* format including the registered
+YAML encoder, so it's uniform across `--format`.
 
 ### 3. YAML stays in your CLI, via `RegisterEncoder`
 

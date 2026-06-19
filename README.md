@@ -59,7 +59,7 @@ delete its hand-rolled `internal/output/`):
 | File | Contents |
 |---|---|
 | `format.go` | `Format` + `FormatJSON/YAML/NDJSON`, `ParseFormat`, `ResolveFormat`, `Print`, `PrintJSON`, `RegisterEncoder` |
-| `prune.go` | `Prune` — strip empty fields (compact projection) |
+| `prune.go` | `Pruner` type + `PruneNils` / `PruneEmpty` — selectable compact-projection policies |
 | `list.go` | `WriteList` — render a record list + `@`-meta as NDJSON stream or `{data, …}` JSON envelope |
 
 ### Format routing and the zero-dep YAML hook
@@ -76,10 +76,17 @@ func init() {
 }
 ```
 
-Unregistered formats return a structured error. The helpers are **opt-in**: a
-producer that must preserve nulls (e.g. fixed tabular columns) just never calls
-`Prune`; callers pass their own meta-key names, so `WriteList` imposes no
-envelope policy.
+Unregistered formats return a structured error. The helpers are **opt-in and
+policy-neutral**: pruning is a `Pruner` you pass to `Print`/`WriteList` (or
+`nil`), not a baked-in default — `PruneNils` drops only nulls, `PruneEmpty` also
+drops empty strings/maps/slices, and a producer that must preserve nulls (e.g.
+fixed tabular columns) passes `nil`. Callers also supply their own meta-key
+names, so `WriteList` imposes no envelope policy.
+
+```go
+output.Print(w, deployment, format, output.PruneEmpty)   // compact
+output.WriteList(w, format, rows, meta, nil)             // preserve everything
+```
 
 The package has **no third-party dependencies** and must stay that way — see
 [`AGENTS.md`](AGENTS.md). Background, the family conventions it codifies, and the
