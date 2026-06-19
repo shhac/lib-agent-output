@@ -22,8 +22,13 @@ func TestParseFormat(t *testing.T) {
 			t.Errorf("ParseFormat(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	if _, err := ParseFormat("toml"); err == nil {
-		t.Error("ParseFormat(toml) should error")
+	_, err := ParseFormat("toml")
+	if err == nil {
+		t.Fatal("ParseFormat(toml) should error")
+	}
+	var oerr *Error
+	if !As(err, &oerr) || oerr.FixableBy != FixableByAgent {
+		t.Errorf("ParseFormat error should be a fixable_by:agent *Error, got %T %v", err, err)
 	}
 }
 

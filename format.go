@@ -29,7 +29,10 @@ func ParseFormat(s string) (Format, error) {
 	case "jsonl", "ndjson":
 		return FormatNDJSON, nil
 	default:
-		return "", fmt.Errorf("unknown format %q, expected one of: json, yaml, jsonl", s)
+		// Classify as agent-fixable: a bad --format value is something the
+		// calling agent can correct. (CLIs relied on this classification before
+		// they delegated parsing here.)
+		return "", New(fmt.Sprintf("unknown format %q, expected one of: json, yaml, jsonl", s), FixableByAgent)
 	}
 }
 
