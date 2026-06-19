@@ -74,8 +74,10 @@ mapping (yours on the left — names may vary slightly per repo):
 |---|---|
 | `APIError` (struct) | `Error` |
 | `FixableBy`, `FixableByAgent/Human/Retry` | same names |
-| `errors.New / Newf / Wrap / (*APIError).WithHint / As` | `output.New / Newf / Wrap / WithHint / As` |
+| `errors.New / Newf / Wrap / WithHint / WithHints / WithCause / As` | same names on `output` |
 | `WriteError(w, err)` | `output.WriteError(w, err)` |
+| `mapStatus` / `classifyHTTPError` status→FixableBy switch | `output.FixableByStatus(code)` (keep your message/hint building; see gotcha #5) |
+| Retry-After in hint text | `(*Error).WithRetryAfter(d)` → structured `retry_after_seconds` (gotcha #5) |
 | `NDJSONWriter`, `NewNDJSONWriter` | same |
 | `WriteItem`, `WriteMetaLine` | same |
 | `WritePagination` (if present) | `output.WritePagination(Pagination)` |
@@ -217,6 +219,38 @@ family majority. If your CLI emitted **camelCase** pagination/metadata, adopting
 the shared `Pagination` **changes the bytes consumers see**. That's a breaking
 change for your CLI's output — schedule it deliberately (and bump your CLI's
 version / note it), don't let it ride along silently inside a "refactor."
+
+### 5. Error classification — delete your status switch
+
+Every REST CLI in the family independently wrote the same HTTP-status →
+`fixable_by` switch (401/402/403 → human, 429/5xx → retry, else → agent). That's
+now `output.FixableByStatus(code)`. Keep your vendor-specific message, hint, and
+error-body parsing — only the *classification* moves:
+
+```go
+// before: a 30-line classifyHTTPError switch
+// after:
+return output.Newf(output.FixableByStatus(status), "%s", vendorMessage(body)).
+    WithHints(vendorHints...).
+    WithRetryAfter(retryAfterFromHeader(resp)) // structured, your value
+```
+
+If your CLI refines a code beyond the default (e.g. Stripe promoting an
+`authentication_error` body to `human`), branch *after* the default:
+
+```go
+fb := output.FixableByStatus(status)
+if errType == "authentication_error" || errType == "permission_error" {
+    fb = output.FixableByHuman
+}
+```
+
+**Retry timing is policy you own.** `WithRetryAfter(d)` surfaces a structured
+`retry_after_seconds` for the agent — and the library never supplies a default,
+so the value is always yours (parse it from the `Retry-After` header, or set
+your own). Old CLIs that buried "wait ~30s" in hint text can promote it to the
+structured field. (Backoff/retry *loops* stay in your client layer — they vary
+across the family and aren't an output concern.)
 
 ### Also worth checking
 

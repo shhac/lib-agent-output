@@ -44,8 +44,9 @@ in an MCP server, and the contract's version must not be coupled to either side.
 
 ### stderr — diagnostics
 
-- **Errors**: `{"error": msg, "fixable_by": ..., "hint": ...?}` — one JSON
-  object (`WriteError`). `hint` omitted when empty.
+- **Errors**: `{"error": msg, "fixable_by": ..., "hint": ...?,
+  "retry_after_seconds": ...?}` — one JSON object (`WriteError`). `hint` and
+  `retry_after_seconds` omitted when empty/zero.
 - **Notices** (non-fatal): `{"notice": msg, "hint": ...?}` (`WriteNotice`).
 - Keeping stderr structured (never freeform prose) means a consumer can parse
   both streams.
@@ -61,6 +62,18 @@ in an MCP server, and the contract's version must not be coupled to either side.
 This field is the contract's highest-value idea: it tells an automated caller
 *what to do next* without parsing the message. `lib-agent-mcp` maps it straight
 onto agent behaviour.
+
+**`FixableByStatus(httpStatus)`** captures the HTTP-status → `fixable_by`
+mapping that all six surveyed REST CLIs (vercel, cloudflare, dd, incident,
+stripe, posthog) wrote identically — `401/402/403 → human`, `429/5xx → retry`,
+everything else → `agent`. It is classification only; the message, hint, and
+error-body parsing stay vendor-specific.
+
+**`retry_after_seconds`** (optional) carries how long to wait before retrying a
+`retry` error. It is set by the producer via `WithRetryAfter` — typically from a
+`Retry-After` header — and the library imposes **no default**: retry timing is
+policy the CLI owns, the same stance taken for pruning. Backoff/retry *loops*
+are a client-layer concern and live in the CLI, not here.
 
 ### exit code
 

@@ -4,6 +4,8 @@ import (
 	stderrors "errors"
 	"fmt"
 	"io"
+	"strings"
+	"time"
 )
 
 // FixableBy classifies who can resolve an error, so a calling agent knows
@@ -22,13 +24,37 @@ const (
 	FixableByRetry FixableBy = "retry"
 )
 
+// FixableByStatus classifies an HTTP status code, following the convention the
+// agent-* family converged on independently: 401/402/403 need a human (auth,
+// permission, payment); 429 and 5xx are transient and retryable; everything
+// else (404, other 4xx, bad input) is the agent's to fix. A CLI that needs a
+// different call for a specific code can branch before or after this default
+// (e.g. promoting a vendor "authentication_error" body to FixableByHuman).
+//
+// Network, timeout, and context errors are not status-coded — classify those
+// directly, e.g. output.Wrap(err, output.FixableByRetry).
+func FixableByStatus(status int) FixableBy {
+	switch {
+	case status == 429 || status >= 500:
+		return FixableByRetry
+	case status == 401 || status == 402 || status == 403:
+		return FixableByHuman
+	default:
+		return FixableByAgent
+	}
+}
+
 // Error is the structured error written to stderr. Its JSON form is the
-// contract: {"error": ..., "fixable_by": ..., "hint": ...?}.
+// contract: {"error", "fixable_by", "hint"?, "retry_after_seconds"?}.
 type Error struct {
 	Message   string    `json:"error"`
 	Hint      string    `json:"hint,omitempty"`
 	FixableBy FixableBy `json:"fixable_by"`
-	Cause     error     `json:"-"`
+	// RetryAfterSeconds, when > 0, tells the agent how long to wait before
+	// retrying a FixableByRetry error. It is always the caller's value (e.g.
+	// parsed from a Retry-After header); this package imposes no default.
+	RetryAfterSeconds int   `json:"retry_after_seconds,omitempty"`
+	Cause             error `json:"-"`
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -53,6 +79,37 @@ func Wrap(err error, fixableBy FixableBy) *Error {
 // and returns the same Error for chaining.
 func (e *Error) WithHint(hint string) *Error {
 	e.Hint = hint
+	return e
+}
+
+// WithHints joins several non-empty hints into the single hint field (with
+// "; ") and returns the same Error for chaining.
+func (e *Error) WithHints(hints ...string) *Error {
+	var kept []string
+	for _, h := range hints {
+		if strings.TrimSpace(h) != "" {
+			kept = append(kept, h)
+		}
+	}
+	e.Hint = strings.Join(kept, "; ")
+	return e
+}
+
+// WithCause attaches the underlying cause (for errors.Unwrap / errors.As) and
+// returns the same Error for chaining.
+func (e *Error) WithCause(err error) *Error {
+	e.Cause = err
+	return e
+}
+
+// WithRetryAfter records how long to wait before retrying, rounded to whole
+// seconds — set it from the API's Retry-After header (or your own policy). The
+// value is surfaced as retry_after_seconds; this package never supplies a
+// default, so the producer's business logic is always in control.
+func (e *Error) WithRetryAfter(d time.Duration) *Error {
+	if s := int(d.Round(time.Second) / time.Second); s > 0 {
+		e.RetryAfterSeconds = s
+	}
 	return e
 }
 

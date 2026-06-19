@@ -36,6 +36,11 @@ _ = w.WritePagination(output.Pagination{HasMore: true, NextCursor: cur})
 return output.New(fmt.Sprintf("widget %q not found", id), output.FixableByAgent).
     WithHint("list ids with 'mycli item list'")
 
+// Classify an API failure by HTTP status (the family convention), and pass the
+// server's Retry-After through so the agent knows how long to wait.
+return output.Newf(output.FixableByStatus(resp.StatusCode), "%s", body).
+    WithRetryAfter(retryAfter) // the caller's value — the library imposes no default
+
 // ...written at the top level:
 if err := root.Execute(); err != nil {
     output.WriteError(os.Stderr, err) // {"error":...,"fixable_by":...,"hint":...}
@@ -50,7 +55,7 @@ if err := root.Execute(); err != nil {
 | File | Contents |
 |---|---|
 | `ndjson.go` | `NDJSONWriter` (`WriteItem`, `WriteMetaLine`, `WritePagination`), `Pagination`, `MetaKeyPagination` |
-| `errors.go` | `Error`, `FixableBy`, `New`/`Newf`/`Wrap`/`WithHint`/`As`, `WriteError` |
+| `errors.go` | `Error`, `FixableBy`, `FixableByStatus`, `New`/`Newf`/`Wrap`/`WithHint`/`WithHints`/`WithCause`/`WithRetryAfter`/`As`, `WriteError` |
 | `notice.go` | `WriteNotice` |
 
 **Opt-in presentation helpers** (shared, zero-dep, domain-free — so a CLI can
