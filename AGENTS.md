@@ -40,13 +40,16 @@ go test ./...
   the `RegisterEncoder` hook — the CLI imports `yaml.v3` and registers it; the
   core never does. Do not add an encoder dependency directly.
 - **Presentation helpers are opt-in and policy-neutral.** `Print`, `WriteList`,
-  the pruners (`PruneNils`/`PruneEmpty`/the `Pruner` type), and the `Format`
-  routing are conveniences, not part of the must-agree wire contract. Pruning is
-  a `Pruner` the caller passes (or `nil`), never a baked-in default — which
-  policy to apply is the producer's business decision, not this package's. Keep
-  it that way; don't reintroduce a boolean that picks one. The contract types
-  (`Error`, `Pagination`, `NDJSONWriter`, `WriteNotice`) are what consumers like
-  `lib-agent-mcp` rely on.
+  the pruners (`PruneNils`/`PruneEmpty`/`Pruner`), redaction (`Redact`/
+  `RedactRule`/`RedactKeys`), and the `Format` routing are conveniences, not part
+  of the must-agree wire contract. The *policy* is always caller-supplied —
+  pruning is a `Pruner` (or `nil`), redaction is a `RedactRule` (or none),
+  retry-after is `WithRetryAfter`. The library owns the *mechanism* and the wire
+  shape (`@redacted` notes, `[REDACTED]`, `--expose` matching); WHICH fields are
+  secret / empty is the producer's business decision, not this package's. Keep it
+  that way; don't reintroduce a boolean or a baked-in field list. The contract
+  types (`Error`, `Pagination`, `NDJSONWriter`, `WriteNotice`) are what consumers
+  like `lib-agent-mcp` rely on.
 - **This is a contract, not just code.** A change to the JSON shape (field
   names, the `@`-prefix convention, `fixable_by` values, error keys) ripples to
   every producer and consumer. Treat the wire format as a stable API: additive

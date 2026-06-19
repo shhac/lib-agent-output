@@ -39,8 +39,9 @@ in an MCP server, and the contract's version must not be coupled to either side.
 - **Metadata** rides on `@`-prefixed single-key lines, emitted after the data
   records. The canonical one is the pagination trailer:
   `{"@pagination": {"has_more": true, "next_cursor": "..."}}`. Others seen in
-  the family: `@unresolved`, `@referenced_projects`. A consumer distinguishes
-  metadata from data by the single `@`-prefixed key.
+  the family: `@unresolved`, `@referenced_projects`, and `@redacted` (the
+  redaction note list, attached to a record by `Redact`). A consumer
+  distinguishes metadata from data by the single `@`-prefixed key.
 
 ### stderr — diagnostics
 

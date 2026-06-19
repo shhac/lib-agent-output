@@ -22,12 +22,16 @@ intend.
   (`WriteItem`/`WriteMetaLine`/`WritePagination`), `Pagination`, `WriteNotice`,
   `MetaKeyPagination`.
 - Opt-in, zero-dep helpers: `Format` + `ParseFormat`/`ResolveFormat`, `Print`,
-  `PrintJSON`, `WriteList`, and the `Pruner` policies (`PruneNils`/`PruneEmpty`).
+  `PrintJSON`, `WriteList`, the `Pruner` policies (`PruneNils`/`PruneEmpty`), and
+  the redaction mechanism (`Redact` + `RedactRule`/`RedactKeys`).
 
 **Stays in your CLI (domain-specific — the shared module deliberately won't take it):**
 
-- **Redaction** (which fields are secret is your domain knowledge —
-  e.g. `client_secret`, `phc_*` keys, `@redacted` notes, `--expose`).
+- **The redaction *predicate*** — *which* fields are secret (your key list,
+  value prefixes, or secret-echo) is a `RedactRule` you supply; the mechanism
+  (`[REDACTED]`, `@redacted` notes, `--expose`) is the library's. See gotcha #6.
+  The one part that stays fully yours: masking a secret that appears as a
+  *substring* of a larger value (`Redact` masks whole values only).
 - **Truncation field-sets** (which fields to truncate and at what limit).
 - **CSV** and any other niche format your CLI offers beyond json/yaml/jsonl.
 - **Bespoke `@`-meta keys** (`@counts`, `@unresolved`, `@referenced_*`, …) —
@@ -91,7 +95,8 @@ mapping (yours on the left — names may vary slightly per repo):
 | `pruneEmpty` (nil + empties) | `output.PruneEmpty` |
 | `Stdout()/Stderr()/SetWriters()` test-injection globals | not provided — pass `io.Writer` explicitly, or keep a tiny local shim |
 | `walkTree`, `normalizeYAMLNumbers` | not provided — keep locally; used by your YAML encoder (gotcha #3) |
-| redaction, truncation, CSV | not provided — **stays yours** |
+| redaction walk + `@redacted` notes + `--expose` | `output.Redact(v, rule, expose)`; your `shouldRedact` switch becomes a `RedactRule` (gotcha #6) |
+| truncation, CSV | not provided — **stays yours** |
 
 ---
 
@@ -251,6 +256,32 @@ so the value is always yours (parse it from the `Retry-After` header, or set
 your own). Old CLIs that buried "wait ~30s" in hint text can promote it to the
 structured field. (Backoff/retry *loops* stay in your client layer — they vary
 across the family and aren't an output concern.)
+
+### 6. Redaction — your `shouldRedact` switch becomes a `RedactRule`
+
+If your CLI masks secret response fields, delete the tree-walk, the `@redacted`
+note-builder, and the `--expose` matcher — `output.Redact(v, rule, expose)` owns
+all of that. Keep only the **policy** as a `RedactRule`:
+
+```go
+// before: redactValue/redactMap/redactSlice + shouldRedactField + isExposed + …
+// after — a fixed key list is one line:
+data = output.Redact(data, output.RedactKeys("client_secret", "api_key", "secret"), g.Expose)
+
+// value-prefix (posthog), context-aware (stripe), or secret-echo: a custom rule.
+rule := func(path, key string, value any, parent map[string]any) bool {
+    if s, ok := value.(string); ok && strings.HasPrefix(s, "phc_") { return true } // value-prefix
+    return key == "name" && parent["object"] == "customer"                          // context-aware
+}
+```
+
+The `--expose` flag value passes straight through (`output.Redact` parses
+comma-joined entries and matches by exact path, exact key, `<prefix>.`, or
+`all`/`*`). The note shape (`{path, reason, expose_hint}`), the `[REDACTED]`
+placeholder, and the top-level `@redacted` attachment match the family's
+existing wire output, so this is a near-zero-diff swap. **The exception**: if you
+redact a secret that's *echoed inside* a larger string (deepweb's raw-byte
+scrub), keep that pass — `Redact` masks whole values, not substrings.
 
 ### Also worth checking
 

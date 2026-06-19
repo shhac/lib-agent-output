@@ -41,6 +41,11 @@ return output.New(fmt.Sprintf("widget %q not found", id), output.FixableByAgent)
 return output.Newf(output.FixableByStatus(resp.StatusCode), "%s", body).
     WithRetryAfter(retryAfter) // the caller's value — the library imposes no default
 
+// Mask secret fields before printing; WHICH fields is your policy, the [REDACTED]
+// markers + @redacted notes + --expose are the library's. A simple key list:
+data = output.Redact(data, output.RedactKeys("client_secret", "api_key"), exposeFlag)
+// …or a custom rule (value prefix, context-aware, secret-echo): a RedactRule.
+
 // ...written at the top level:
 if err := root.Execute(); err != nil {
     output.WriteError(os.Stderr, err) // {"error":...,"fixable_by":...,"hint":...}
@@ -66,6 +71,7 @@ delete its hand-rolled `internal/output/`):
 | `format.go` | `Format` + `FormatJSON/YAML/NDJSON`, `ParseFormat`, `ResolveFormat`, `Print`, `PrintJSON`, `RegisterEncoder` |
 | `prune.go` | `Pruner` type + `PruneNils` / `PruneEmpty` — selectable compact-projection policies |
 | `list.go` | `WriteList` — render a record list + `@`-meta as NDJSON stream or `{data, …}` JSON envelope |
+| `redact.go` | `Redact(v, rule, expose)` + `RedactRule` / `RedactKeys` — mask secret fields, emit `@redacted` notes, honor `--expose`; *which* fields is the caller's policy |
 
 ### Format routing and the zero-dep YAML hook
 

@@ -70,9 +70,14 @@ agent-sql's `@truncated`.
 - **YAML / CSV encoders** — need third-party deps (`gopkg.in/yaml.v3`); the core
   is zero-dependency. YAML may be supported via an *optional registered
   encoder* hook (keeps the core dep-free); CSV is niche and SQL-shaped.
-- **Redaction** (`@redacted`, `--expose`) — which fields are secret is
-  domain knowledge (stripe's `client_secret`, posthog's `phc_` prefixes). A
-  generic redactor can't own the policy. Stays in the CLIs.
+- **Redaction** (`@redacted`, `--expose`) — *revised in v0.4.0.* Originally filed
+  here as "stays in the CLIs," conflating the policy with the whole feature. By
+  the same logic as `Pruner`, the *mechanism* (tree-walk, `[REDACTED]` masking,
+  `@redacted` notes, `--expose` matching) is shared as `Redact(v, rule, expose)`;
+  only the predicate — WHICH fields are secret (stripe's `client_secret`,
+  posthog's `phc_` prefixes, deepweb's secret-echo) — is the injected
+  `RedactRule`. The one thing that stays CLI-side is **substring** redaction over
+  raw bytes (deepweb's echo scrub); `Redact` masks whole values only.
 - **HTTP/tabular envelopes** — agent-deepweb's request/response envelope and
   agent-sql's `{columns, rows}` are domain shapes, not the generic record list.
 
@@ -112,5 +117,6 @@ broad near-drop-in. **Resolved: broad, but disciplined.**
 
 So the package ships the wire contract **plus** opt-in, zero-dep, domain-free
 helpers (`Format`/`ParseFormat`/`ResolveFormat`, the `Pruner` policies,
-`Print`/`PrintJSON`, `WriteList`, `RegisterEncoder`). Domain-specific concerns (redaction,
-truncation field-sets, CSV) stay in the CLIs.
+`Redact` + `RedactRule`, `Print`/`PrintJSON`, `WriteList`, `RegisterEncoder`) —
+each owning a mechanism while the policy is injected. Truly domain concerns
+(truncation field-sets, CSV, substring secret-echo) stay in the CLIs.
