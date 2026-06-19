@@ -47,6 +47,15 @@ func TestWithCauseUnwraps(t *testing.T) {
 	}
 }
 
+func TestWrapNilIsNil(t *testing.T) {
+	if got := Wrap(nil, FixableByHuman); got != nil {
+		t.Errorf("Wrap(nil) = %v, want nil", got)
+	}
+	if got := Wrap(bytes.ErrTooLarge, FixableByRetry); got == nil || got.Message == "" {
+		t.Errorf("Wrap(non-nil) should classify the error, got %v", got)
+	}
+}
+
 func TestWithRetryAfterSerializes(t *testing.T) {
 	var buf bytes.Buffer
 	WriteError(&buf, New("rate limited", FixableByRetry).WithRetryAfter(30*time.Second))

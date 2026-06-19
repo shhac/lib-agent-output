@@ -72,8 +72,12 @@ func Newf(fixableBy FixableBy, format string, args ...any) *Error {
 	return &Error{Message: fmt.Sprintf(format, args...), FixableBy: fixableBy}
 }
 
-// Wrap classifies an existing error, preserving it as the cause.
+// Wrap classifies an existing error, preserving it as the cause. A nil error
+// wraps to a nil *Error, so callers can wrap-and-return without a nil guard.
 func Wrap(err error, fixableBy FixableBy) *Error {
+	if err == nil {
+		return nil
+	}
 	return &Error{Message: err.Error(), FixableBy: fixableBy, Cause: err}
 }
 
