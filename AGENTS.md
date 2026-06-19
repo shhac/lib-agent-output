@@ -36,7 +36,14 @@ go test ./...
 - **Zero third-party dependencies.** This package sits at the bottom of the
   dependency graph for the whole family; anything it imports, every CLI
   inherits. Standard library only. If you reach for a dependency, stop and
-  reconsider.
+  reconsider. Formats that need a third-party encoder (YAML) are supported via
+  the `RegisterEncoder` hook — the CLI imports `yaml.v3` and registers it; the
+  core never does. Do not add an encoder dependency directly.
+- **Presentation helpers are opt-in.** `Prune`, `Print`, `WriteList`, and the
+  `Format` routing are conveniences, not part of the must-agree wire contract.
+  Keep them policy-neutral: never force pruning, and let callers choose meta-key
+  names and envelope shape. The contract types (`Error`, `Pagination`,
+  `NDJSONWriter`, `WriteNotice`) are what consumers like `lib-agent-mcp` rely on.
 - **This is a contract, not just code.** A change to the JSON shape (field
   names, the `@`-prefix convention, `fixable_by` values, error keys) ripples to
   every producer and consumer. Treat the wire format as a stable API: additive

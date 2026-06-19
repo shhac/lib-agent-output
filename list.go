@@ -1,0 +1,59 @@
+package output
+
+import (
+	"io"
+	"sort"
+)
+
+// WriteList renders a list of records plus optional @-prefixed metadata, in the
+// family's two list shapes:
+//
+//   - NDJSON: one record per line (optionally pruned), then one line per
+//     metadata entry, keys sorted for deterministic output.
+//   - JSON / YAML: a single envelope {"data": [records], <meta keys...>}.
+//
+// The caller supplies the metadata map and its key names (e.g.
+// MetaKeyPagination), so WriteList imposes no policy on whether meta keys are
+// @-prefixed or where pagination lives — it just renders what it's given.
+func WriteList(w io.Writer, format Format, items []any, meta map[string]any, prune bool) error {
+	if format == FormatNDJSON {
+		nw := NewNDJSONWriter(w)
+		for _, it := range items {
+			if prune {
+				it = pruneValue(it)
+			}
+			if err := nw.WriteItem(it); err != nil {
+				return err
+			}
+		}
+		for _, k := range sortedKeys(meta) {
+			if err := nw.WriteMetaLine(k, meta[k]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	data := make([]any, len(items))
+	for i, it := range items {
+		if prune {
+			it = pruneValue(it)
+		}
+		data[i] = it
+	}
+	envelope := map[string]any{"data": data}
+	for k, v := range meta {
+		envelope[k] = v
+	}
+	// The envelope itself is not pruned: an empty "data" list must survive.
+	return Print(w, envelope, format, false)
+}
+
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
