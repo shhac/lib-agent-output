@@ -114,4 +114,4 @@ go vet ./...
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE) — © 2026 Paul Somers.
+[PolyForm Perimeter License 1.0.0](LICENSE) — © 2026 Paul Somers.
