@@ -16,12 +16,11 @@ import (
 // MetaKeyPagination), so WriteList imposes no policy on whether meta keys are
 // @-prefixed or where pagination lives — it just renders what it's given.
 func WriteList(w io.Writer, format Format, items []any, meta map[string]any, prune bool) error {
+	items = pruneItems(items, prune)
+
 	if format == FormatNDJSON {
 		nw := NewNDJSONWriter(w)
 		for _, it := range items {
-			if prune {
-				it = pruneValue(it)
-			}
 			if err := nw.WriteItem(it); err != nil {
 				return err
 			}
@@ -34,19 +33,23 @@ func WriteList(w io.Writer, format Format, items []any, meta map[string]any, pru
 		return nil
 	}
 
-	data := make([]any, len(items))
-	for i, it := range items {
-		if prune {
-			it = pruneValue(it)
-		}
-		data[i] = it
-	}
-	envelope := map[string]any{"data": data}
+	envelope := map[string]any{"data": items}
 	for k, v := range meta {
 		envelope[k] = v
 	}
 	// The envelope itself is not pruned: an empty "data" list must survive.
 	return Print(w, envelope, format, false)
+}
+
+func pruneItems(items []any, prune bool) []any {
+	if !prune {
+		return items
+	}
+	out := make([]any, len(items))
+	for i, it := range items {
+		out[i] = pruneValue(it)
+	}
+	return out
 }
 
 func sortedKeys(m map[string]any) []string {

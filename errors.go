@@ -1,7 +1,6 @@
 package output
 
 import (
-	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -70,7 +69,5 @@ func WriteError(w io.Writer, err error) {
 	if !As(err, &e) {
 		e = Wrap(err, FixableByAgent)
 	}
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(e)
+	_ = newEncoder(w).Encode(e)
 }

@@ -1,9 +1,6 @@
 package output
 
-import (
-	"encoding/json"
-	"io"
-)
+import "io"
 
 // WriteNotice writes a non-fatal, machine-parseable diagnostic as a single
 // JSON line to w (typically os.Stderr). It is the informational counterpart to
@@ -13,7 +10,5 @@ func WriteNotice(w io.Writer, notice, hint string) {
 	if hint != "" {
 		payload["hint"] = hint
 	}
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(payload)
+	_ = newEncoder(w).Encode(payload)
 }

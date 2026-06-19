@@ -59,3 +59,11 @@ func TestWriteListJSONKeepsEmptyDataList(t *testing.T) {
 		t.Errorf("empty data list must survive pruning: %v", env)
 	}
 }
+
+func TestWriteListUnregisteredFormatErrors(t *testing.T) {
+	var buf bytes.Buffer
+	err := WriteList(&buf, FormatYAML, []any{map[string]any{"id": "a"}}, nil, false)
+	if err == nil {
+		t.Error("WriteList should propagate the error for an unregistered encoder")
+	}
+}

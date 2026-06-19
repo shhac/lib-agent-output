@@ -33,9 +33,7 @@ type NDJSONWriter struct {
 
 // NewNDJSONWriter returns an NDJSONWriter writing to w (typically os.Stdout).
 func NewNDJSONWriter(w io.Writer) *NDJSONWriter {
-	enc := json.NewEncoder(w)
-	enc.SetEscapeHTML(false)
-	return &NDJSONWriter{enc: enc}
+	return &NDJSONWriter{enc: newEncoder(w)}
 }
 
 // WriteItem writes a single record as one JSON line.

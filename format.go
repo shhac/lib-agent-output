@@ -78,18 +78,24 @@ func PrintJSON(w io.Writer, data any, prune bool) error {
 // encoder, returning an error if none is registered. When prune is true, empty
 // fields are stripped first (see Prune). HTML escaping is always disabled so
 // URLs survive intact.
+// newEncoder returns a JSON encoder with HTML escaping disabled — the family
+// convention, so URLs and query strings survive intact. It is the single point
+// of control for the "escaping off" invariant across the package.
+func newEncoder(w io.Writer) *json.Encoder {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc
+}
+
 func Print(w io.Writer, data any, format Format, prune bool) error {
 	if prune {
 		data = pruneValue(data)
 	}
 	switch format {
 	case FormatNDJSON:
-		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
-		return enc.Encode(data)
+		return newEncoder(w).Encode(data)
 	case FormatJSON:
-		enc := json.NewEncoder(w)
-		enc.SetEscapeHTML(false)
+		enc := newEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(data)
 	default:
