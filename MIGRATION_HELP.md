@@ -1,0 +1,288 @@
+# Migrating a CLI onto `lib-agent-output`
+
+How to replace a hand-rolled `internal/output/` (and usually `internal/errors/`)
+package in an agent-first CLI with the shared `github.com/shhac/lib-agent-output`
+module. This guide is generic — it applies to any `agent-*` family CLI. Work
+through it in order; the verification step is the load-bearing one.
+
+The family's `internal/output` packages were copied between repos and then
+drifted. The shared module is the de-drifted superset. Migrating is mostly a
+mechanical swap **plus** a small number of genuine decisions where your copy
+diverged. The whole job is: delete your copy, import `output`, reconcile the
+divergences, and prove the bytes on the wire didn't change in ways you didn't
+intend.
+
+---
+
+## What the shared module owns vs. what stays yours
+
+**Owned by `lib-agent-output` (delete your copies, import these):**
+
+- The wire contract: `Error` + `FixableBy`, `NDJSONWriter`
+  (`WriteItem`/`WriteMetaLine`/`WritePagination`), `Pagination`, `WriteNotice`,
+  `MetaKeyPagination`.
+- Opt-in, zero-dep helpers: `Format` + `ParseFormat`/`ResolveFormat`, `Print`,
+  `PrintJSON`, `WriteList`, `Prune`.
+
+**Stays in your CLI (domain-specific — the shared module deliberately won't take it):**
+
+- **Redaction** (which fields are secret is your domain knowledge —
+  e.g. `client_secret`, `phc_*` keys, `@redacted` notes, `--expose`).
+- **Truncation field-sets** (which fields to truncate and at what limit).
+- **CSV** and any other niche format your CLI offers beyond json/yaml/jsonl.
+- **Bespoke `@`-meta keys** (`@counts`, `@unresolved`, `@referenced_*`, …) —
+  you keep emitting them via `WriteMetaLine`; only the convention is shared.
+- **The YAML dependency itself** — see gotcha #3. The core stays dependency-free;
+  your CLI registers its YAML encoder.
+
+If a piece of your output code encodes knowledge about *your* API's resources,
+it stays. If it encodes the *shape of the contract* (records, errors,
+pagination, format routing), it moves.
+
+---
+
+## Step 0 — Assess before changing anything
+
+1. **Add the dependency:**
+
+   ```sh
+   go get github.com/shhac/lib-agent-output@latest   # or pin @v0.1.0
+   ```
+
+2. **Inventory** your two packages and their blast radius:
+
+   ```sh
+   # Which files depend on the packages you're about to delete?
+   git grep -l 'internal/output' | wc -l
+   git grep -l 'internal/errors' | wc -l
+   # Call-site counts for the symbols you'll rename:
+   git grep -c 'errors\.\(New\|Newf\|Wrap\)\|FixableBy' | awk -F: '{n+=$2} END{print n}'
+   ```
+
+3. **Build the symbol map** (next section) and **flag the divergences** (the
+   four gotchas below). The migration is mechanical *except* where your copy
+   diverged — find those first so they don't surprise you mid-swap.
+
+---
+
+## The symbol map
+
+The family copies are near-identical, so most symbols map one-to-one. Typical
+mapping (yours on the left — names may vary slightly per repo):
+
+| Your `internal/output` / `internal/errors` | `lib-agent-output` (`package output`) |
+|---|---|
+| `APIError` (struct) | `Error` |
+| `FixableBy`, `FixableByAgent/Human/Retry` | same names |
+| `errors.New / Newf / Wrap / (*APIError).WithHint / As` | `output.New / Newf / Wrap / WithHint / As` |
+| `WriteError(w, err)` | `output.WriteError(w, err)` |
+| `NDJSONWriter`, `NewNDJSONWriter` | same |
+| `WriteItem`, `WriteMetaLine` | same |
+| `WritePagination` (if present) | `output.WritePagination(Pagination)` |
+| `Pagination` | `output.Pagination` |
+| `Format`, `FormatJSON/YAML/NDJSON` | same |
+| `ParseFormat`, `ResolveFormat(flag, def)` | same |
+| `Print(w, data, format, prune)` | same |
+| `PrintJSON` | same |
+| paginated-list helper (`PrintList`/`emitList`/`printList`) | `output.WriteList(w, format, items, meta, prune)` |
+| `pruneNulls` / `pruneEmpty` | `output.Prune` — **but check semantics (gotcha #2)** |
+| `Stdout()/Stderr()/SetWriters()` test-injection globals | not provided — pass `io.Writer` explicitly, or keep a tiny local shim |
+| `walkTree`, `normalizeYAMLNumbers` | not provided — keep locally; used by your YAML encoder (gotcha #3) |
+| redaction, truncation, CSV | not provided — **stays yours** |
+
+---
+
+## Step 1 — (Optional) alias shim for an incremental swap
+
+If your CLI is large, you can swap the *implementation* without touching call
+sites first, then inline later. Keep your `internal/output` package but make it
+re-export the shared one:
+
+```go
+package output
+
+import out "github.com/shhac/lib-agent-output"
+
+type (
+    Error      = out.Error      // type aliases keep call sites compiling
+    FixableBy  = out.FixableBy
+    Pagination = out.Pagination
+    Format     = out.Format
+)
+
+const (
+    FixableByAgent = out.FixableByAgent
+    FixableByHuman = out.FixableByHuman
+    FixableByRetry = out.FixableByRetry
+    FormatJSON     = out.FormatJSON
+    FormatYAML     = out.FormatYAML
+    FormatNDJSON   = out.FormatNDJSON
+)
+
+var (
+    New              = out.New
+    Wrap             = out.Wrap
+    WriteError       = out.WriteError
+    NewNDJSONWriter  = out.NewNDJSONWriter
+    Print            = out.Print
+    ResolveFormat    = out.ResolveFormat
+    // …
+)
+```
+
+Build, run the suite, diff output (Step 3). Once green, delete the shim and
+rewrite imports to point at `output` directly. The shim is a safety net, not the
+destination — don't leave it in long-term.
+
+---
+
+## Step 2 — Swap
+
+1. **Delete** `internal/output/` and `internal/errors/` (or empty the shim).
+2. **Rewrite imports** to `github.com/shhac/lib-agent-output` (alias it `output`
+   so call sites read naturally).
+3. **Rename the error type** at construction sites (`APIError` → `Error` is the
+   common one; the JSON shape is identical so the wire doesn't change).
+4. **Register a YAML encoder** if you support `--format yaml` (gotcha #3).
+5. **Pick your prune** (gotcha #2).
+6. `go mod tidy`.
+
+Each of these is independently verifiable — do them one at a time and keep the
+build green between steps.
+
+---
+
+## The gotchas (where the real decisions are)
+
+### 1. Error type rename, and deleting the `errors` package
+
+The family's error type is usually named `APIError` and lives in
+`internal/errors`; here it's `Error` and lives in `output`. The JSON tags
+(`error`/`hint`/`fixable_by`) and the `FixableBy` values are identical, so this
+is a **rename, not a wire change**. If your CLI has error-classification helpers
+(`ClassifyGraphQLError`, `HandleUnknownCommand`, HTTP-status→`FixableBy`
+mapping), those are *yours* — keep them, but have them build/return
+`output.Error`.
+
+### 2. Prune semantics may differ — verify the output diff
+
+This is the most common silent behavior change. Family copies vary:
+
+- Some prune **only nils** from maps (`pruneNulls`).
+- `output.Prune` is **more aggressive**: it also drops empty/whitespace-only
+  strings, empty maps, and empty slices (within maps; a top-level empty list is
+  preserved).
+
+If your CLI used nil-only pruning, switching to `output.Prune` will **drop
+empty-string and empty-slice fields** from compact output. That may be exactly
+what you want (more token-efficient) — or it may remove a field a downstream
+consumer relied on. **Decide deliberately**, and confirm with a golden-output
+diff (Step 3). If you must keep the looser behavior, keep your own prune
+function and pass `prune: false` to `output.Print`/`WriteList`, pruning yourself
+first.
+
+### 3. YAML stays in your CLI, via `RegisterEncoder`
+
+`lib-agent-output` is zero-dependency, so it does **not** import a YAML library.
+`Print`/`WriteList` handle `json` and `jsonl` natively and delegate everything
+else to a registered encoder. If you support `--format yaml`, register your
+encoder once at startup — this is also where any YAML-specific massaging (e.g.
+normalizing `float64` integers to `int64`) lives:
+
+```go
+import (
+    "gopkg.in/yaml.v3"
+    output "github.com/shhac/lib-agent-output"
+)
+
+func init() {
+    output.RegisterEncoder(output.FormatYAML, func(v any) ([]byte, error) {
+        return yaml.Marshal(normalizeYAMLNumbers(v)) // your existing helper
+    })
+}
+```
+
+`gopkg.in/yaml.v3` thus stays in *your* `go.mod`, not the shared module's. A CLI
+that doesn't offer YAML registers nothing and pulls no YAML dependency.
+
+### 4. JSON casing — a real wire change for camelCase CLIs
+
+`output` uses **snake_case** (`has_more`, `next_cursor`, `total_items`), the
+family majority. If your CLI emitted **camelCase** pagination/metadata, adopting
+the shared `Pagination` **changes the bytes consumers see**. That's a breaking
+change for your CLI's output — schedule it deliberately (and bump your CLI's
+version / note it), don't let it ride along silently inside a "refactor."
+
+### Also worth checking
+
+- **`WriteError` does not exit.** `output.WriteError(w, err)` writes one JSON
+  line and returns. Keep your top-level `os.Exit(1)` (e.g. in `main` after
+  `root.Execute()`); don't assume the writer exits for you.
+- **Pagination field fit.** `output.Pagination` is `{has_more, next_cursor?,
+  total_items?}`. If your API paginates by URL/offset/page, put that token in
+  `next_cursor` as an opaque string, or emit a bespoke struct via
+  `WriteMetaLine(MetaKeyPagination, yourStruct)` — don't force a mismatched
+  shape.
+- **Test-writer globals.** If you relied on package-level `Stdout()`/`Stderr()`
+  with a `SetWriters` test hook, the shared module doesn't have them (it takes
+  `io.Writer` arguments). Thread the writer through, or keep a tiny local helper.
+- **Return signatures.** `output.Print`, `WriteList`, `WriteItem`,
+  `WriteMetaLine`, and `WritePagination` all return `error`. If your local
+  equivalents were `void` (several family copies are), call sites won't compile
+  until you handle or `_ =` the returned error. This is a compile-time nudge,
+  not a behavior change — but it's the one that turns a "find/replace" into a
+  "touch every call site," so expect it.
+
+---
+
+## Step 3 — Verify (do not skip)
+
+Behavior preservation is the whole point. In order of value:
+
+1. **Golden-output diffs.** Before migrating, capture real output for a
+   representative spread — a list (with pagination), a single resource, each
+   `--format`, and at least one error of each `fixable_by` class:
+
+   ```sh
+   for cmd in "thing list" "thing get ID" "thing list --format json" "thing list --format yaml"; do
+     ./your-cli $cmd > golden/"${cmd// /_}".out 2> golden/"${cmd// /_}".err
+   done
+   ```
+
+   After migrating, regenerate and `git diff golden/`. **Every diff must be one
+   you intended** (e.g. an expected prune change). Unintended diffs are bugs.
+
+2. **Run the test suite** — `go test ./...`. Update any tests that asserted on
+   the old type names/paths.
+
+3. **Manual smoke** of a couple of real commands, eyeballing stdout and stderr.
+
+---
+
+## Step 4 — Cleanup
+
+- `go mod tidy` — drops now-unused deps. `gopkg.in/yaml.v3` stays only if you
+  registered a YAML encoder; otherwise it should disappear.
+- Remove helpers that are now dead (e.g. `walkTree` if nothing else used it).
+- `go vet ./...` and your linter.
+- Grep for stragglers: `git grep 'internal/output\|internal/errors\|APIError'`
+  should come back empty (or only your retained domain code).
+
+---
+
+## Rollback
+
+The migration is a normal sequence of commits. If a golden diff reveals an
+unintended wire change you can't reconcile, `git revert` the swap commit — the
+shared module and your old package are byte-compatible on the contract, so a
+clean revert restores the previous behavior exactly.
+
+---
+
+## Convergence note
+
+Once a CLI is migrated, the two casing outliers in the family
+(`agent-sql`, `agent-statsig`, which use camelCase) are the ones with a real
+wire decision to make (gotcha #4); everything else is a near-mechanical swap.
+See [`design-docs/family-survey.md`](design-docs/family-survey.md) for the
+per-repo divergence map.
