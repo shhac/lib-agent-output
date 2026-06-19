@@ -45,11 +45,13 @@ func FixableByStatus(status int) FixableBy {
 }
 
 // Error is the structured error written to stderr. Its JSON form is the
-// contract: {"error", "fixable_by", "hint"?, "retry_after_seconds"?}.
+// contract: {"error", "fixable_by", "hint"?, "retry_after_seconds"?}. Field
+// order is deliberate — the variable-length hint comes after fixable_by so a
+// human scanning stderr sees the classification before the (longer) advice.
 type Error struct {
 	Message   string    `json:"error"`
-	Hint      string    `json:"hint,omitempty"`
 	FixableBy FixableBy `json:"fixable_by"`
+	Hint      string    `json:"hint,omitempty"`
 	// RetryAfterSeconds, when > 0, tells the agent how long to wait before
 	// retrying a FixableByRetry error. It is always the caller's value (e.g.
 	// parsed from a Retry-After header); this package imposes no default.

@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,6 +56,19 @@ func TestWithRetryAfterSerializes(t *testing.T) {
 	}
 	if m["fixable_by"] != "retry" {
 		t.Errorf("fixable_by = %v, want retry", m["fixable_by"])
+	}
+}
+
+func TestWriteErrorKeyOrder(t *testing.T) {
+	var buf bytes.Buffer
+	WriteError(&buf, New("boom", FixableByHuman).WithHint("do the thing"))
+	s := buf.String()
+	// Human-readable order: classification before the variable-length hint.
+	if strings.Index(s, `"fixable_by"`) > strings.Index(s, `"hint"`) {
+		t.Errorf("fixable_by should precede hint: %s", s)
+	}
+	if strings.Index(s, `"error"`) > strings.Index(s, `"fixable_by"`) {
+		t.Errorf("error should precede fixable_by: %s", s)
 	}
 }
 
