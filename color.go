@@ -170,6 +170,16 @@ func painterFor(w io.Writer) Painter {
 	}
 }
 
+// Enabled reports whether color should be applied when writing to w, under the
+// current mode and the per-stream rules (NO_COLOR / TERM=dumb / the injected
+// terminal detector). It is the single predicate a CLI's own non-JSON renderer
+// (e.g. a human transcript or a pretty card) should consult, instead of
+// re-implementing the decision — so every surface in the family colors
+// consistently. JSON/NDJSON output is handled automatically by the package.
+func Enabled(w io.Writer) bool {
+	return painterFor(w) != nil
+}
+
 // encodeJSON is the single internal funnel for the native JSON/NDJSON formats.
 // When color is off it writes the canonical bytes directly (byte-identical to
 // the bare encoder). When on, it renders those exact bytes to a buffer and
