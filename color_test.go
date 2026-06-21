@@ -129,11 +129,40 @@ func TestColor_ErrorEnvelopeSemantics(t *testing.T) {
 	withColor(t, ColorAlways)
 	WriteError(&buf, New("boom", FixableByAgent))
 	out := buf.String()
-	if !strings.Contains(out, ansiBoldRed+"\"boom\""+ansiReset) {
-		t.Errorf("error value should be bold-red painted; got %q", out)
+	// The message content is bold-red; the surrounding quotes are dim punctuation.
+	if !strings.Contains(out, ansiBoldRed+"boom"+ansiReset) {
+		t.Errorf("error value content should be bold-red painted; got %q", out)
+	}
+	if !strings.Contains(out, ansiDim+`"`+ansiReset+ansiBoldRed+"boom") {
+		t.Errorf("opening quote of the error value should be dim; got %q", out)
 	}
 	if stripANSI(out) != `{"error":"boom","fixable_by":"agent"}`+"\n" {
 		t.Errorf("stripped error envelope changed: %q", stripANSI(out))
+	}
+}
+
+// TestColor_StringDelimitersAndEscapes — the quotes and an escape's backslash are
+// dim punctuation; the content keeps its value style; stripping yields the
+// original.
+func TestColor_StringDelimitersAndEscapes(t *testing.T) {
+	val := `a"b\c` // JSON-encodes to "a\"b\\c"
+	withColor(t, ColorAlways)
+	var buf bytes.Buffer
+	if err := Print(&buf, map[string]any{"k": val}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, ansiDim+`\`+ansiReset) {
+		t.Errorf("escape backslash should be dim punctuation; got %q", out)
+	}
+
+	var plain bytes.Buffer
+	withColor(t, ColorNever)
+	if err := Print(&plain, map[string]any{"k": val}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	if stripANSI(out) != plain.String() {
+		t.Errorf("stripped colored != plain\n got=%q\nwant=%q", stripANSI(out), plain.String())
 	}
 }
 

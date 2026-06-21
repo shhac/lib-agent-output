@@ -238,16 +238,16 @@ func colorizeJSON(src []byte, p Painter) []byte {
 				}
 				j++
 			}
-			tok := string(src[i:j])
+			tok := src[i:j]
 			k := j
 			for k < n && (src[k] == ' ' || src[k] == '\n' || src[k] == '\t' || src[k] == '\r') {
 				k++
 			}
 			if k < n && src[k] == ':' { // a key
-				out.WriteString(p.Paint(RoleKey, tok))
-				lastKey = unquote(src[i:j])
+				paintString(&out, tok, RoleKey, p)
+				lastKey = unquote(tok)
 			} else { // a string value
-				out.WriteString(p.Paint(valueRole(lastKey, RoleString), tok))
+				paintString(&out, tok, valueRole(lastKey, RoleString), p)
 				lastKey = ""
 			}
 			i = j
@@ -281,6 +281,36 @@ func colorizeJSON(src []byte, p Painter) []byte {
 		}
 	}
 	return out.Bytes()
+}
+
+// paintString renders a quoted JSON string token (including its surrounding
+// quotes) so the delimiters are scaffolding, not data: the opening/closing
+// quotes and each escape's backslash get the dim punctuation style, while the
+// inner content carries contentRole. Concatenating the raw (un-styled) bytes
+// reproduces tok exactly, preserving the strip-to-original invariant.
+func paintString(out *bytes.Buffer, tok []byte, contentRole Role, p Painter) {
+	if len(tok) < 2 { // malformed; emit as-is under the content role
+		out.WriteString(p.Paint(contentRole, string(tok)))
+		return
+	}
+	out.WriteString(p.Paint(RolePunct, `"`)) // opening quote
+	body := tok[1 : len(tok)-1]
+	i, n := 0, len(body)
+	for i < n {
+		if body[i] == '\\' && i+1 < n {
+			out.WriteString(p.Paint(RolePunct, `\`))                  // dim the escape backslash
+			out.WriteString(p.Paint(contentRole, string(body[i+1]))) // the escaped char stays content
+			i += 2
+			continue
+		}
+		j := i
+		for j < n && body[j] != '\\' {
+			j++
+		}
+		out.WriteString(p.Paint(contentRole, string(body[i:j])))
+		i = j
+	}
+	out.WriteString(p.Paint(RolePunct, `"`)) // closing quote
 }
 
 // valueRole maps a known envelope field name to its semantic Role, falling back
