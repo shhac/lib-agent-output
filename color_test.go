@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -163,6 +164,114 @@ func TestColor_StringDelimitersAndEscapes(t *testing.T) {
 	}
 	if stripANSI(out) != plain.String() {
 		t.Errorf("stripped colored != plain\n got=%q\nwant=%q", stripANSI(out), plain.String())
+	}
+}
+
+// TestColor_Enabled — the public predicate CLIs use for their own renderers.
+func TestColor_Enabled(t *testing.T) {
+	var tty, pipe bytes.Buffer
+
+	withColor(t, ColorAuto, &tty)
+	if !Enabled(&tty) {
+		t.Error("auto + terminal: want enabled")
+	}
+	if Enabled(&pipe) {
+		t.Error("auto + non-terminal: want disabled")
+	}
+
+	withColor(t, ColorAlways)
+	if !Enabled(&pipe) {
+		t.Error("always: want enabled even for a pipe")
+	}
+
+	withColor(t, ColorNever, &tty)
+	if Enabled(&tty) {
+		t.Error("never: want disabled even for a terminal")
+	}
+}
+
+// TestColor_NDJSONWriter — the streaming writer colorizes each line and strips
+// back to the plain stream.
+func TestColor_NDJSONWriter(t *testing.T) {
+	write := func() string {
+		var b bytes.Buffer
+		w := NewNDJSONWriter(&b)
+		_ = w.WriteItem(map[string]any{"id": "A", "n": 1})
+		_ = w.WriteMetaLine(MetaKeyPagination, Pagination{HasMore: true})
+		return b.String()
+	}
+	withColor(t, ColorNever)
+	plain := write()
+	withColor(t, ColorAlways)
+	colored := write()
+
+	if !strings.Contains(colored, "\x1b[") {
+		t.Fatal("expected ANSI in colored NDJSON")
+	}
+	if stripANSI(colored) != plain {
+		t.Errorf("stripped NDJSON != plain\n got=%q\nwant=%q", stripANSI(colored), plain)
+	}
+}
+
+// TestColor_EnvPrecedence — NO_COLOR and TERM=dumb force auto off, but explicit
+// --color always overrides NO_COLOR.
+func TestColor_EnvPrecedence(t *testing.T) {
+	var tty bytes.Buffer
+
+	t.Run("NO_COLOR disables auto", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "1")
+		withColor(t, ColorAuto, &tty)
+		if Enabled(&tty) {
+			t.Error("NO_COLOR should disable auto")
+		}
+	})
+
+	t.Run("always overrides NO_COLOR", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "1")
+		withColor(t, ColorAlways, &tty)
+		if !Enabled(&tty) {
+			t.Error("--color always should override NO_COLOR")
+		}
+	})
+
+	t.Run("TERM=dumb disables auto", func(t *testing.T) {
+		// Isolate from an inherited NO_COLOR so we exercise the TERM branch.
+		if v, ok := os.LookupEnv("NO_COLOR"); ok {
+			os.Unsetenv("NO_COLOR")
+			t.Cleanup(func() { os.Setenv("NO_COLOR", v) })
+		}
+		t.Setenv("TERM", "dumb")
+		withColor(t, ColorAuto, &tty)
+		if Enabled(&tty) {
+			t.Error("TERM=dumb should disable auto")
+		}
+	})
+}
+
+// TestColor_Roles — scalar and semantic tokens get their themed styles.
+func TestColor_Roles(t *testing.T) {
+	withColor(t, ColorAlways)
+
+	var buf bytes.Buffer
+	if err := Print(&buf, map[string]any{"n": 42, "ok": true, "x": nil}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{ansiCyan + "42" + ansiReset, ansiMagenta + "true" + ansiReset, ansiDim + "null" + ansiReset} {
+		if !strings.Contains(out, want) {
+			t.Errorf("scalar role missing %q in %q", want, out)
+		}
+	}
+
+	// notice (cyan) + hint (yellow) on the stderr notice envelope.
+	var nb bytes.Buffer
+	WriteNotice(&nb, "heads up", "do the thing")
+	nout := nb.String()
+	if !strings.Contains(nout, ansiCyan+"heads up"+ansiReset) {
+		t.Errorf("notice value should be cyan; got %q", nout)
+	}
+	if !strings.Contains(nout, ansiYellow+"do the thing"+ansiReset) {
+		t.Errorf("hint value should be yellow; got %q", nout)
 	}
 }
 
