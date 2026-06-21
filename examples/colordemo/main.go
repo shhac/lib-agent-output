@@ -14,7 +14,7 @@ func main() {
 	output.SetColorMode(output.ColorAlways)
 
 	// 1. Single resource (get) — pretty JSON on stdout.
-	output.PrintJSON(os.Stdout, map[string]any{
+	_ = output.PrintJSON(os.Stdout, map[string]any{
 		"id":       "U123",
 		"name":     "Alice Example",
 		"email":    "alice@test.com",
@@ -27,9 +27,9 @@ func main() {
 
 	// 2. NDJSON list + pagination trailer on stdout.
 	nd := output.NewNDJSONWriter(os.Stdout)
-	nd.WriteItem(map[string]any{"id": "T1", "title": "First", "count": 5})
-	nd.WriteItem(map[string]any{"id": "T2", "title": "Second", "count": 12})
-	nd.WritePagination(output.Pagination{HasMore: true, NextCursor: "eyJwIjoy"})
+	_ = nd.WriteItem(map[string]any{"id": "T1", "title": "First", "count": 5})
+	_ = nd.WriteItem(map[string]any{"id": "T2", "title": "Second", "count": 12})
+	_ = nd.WritePagination(output.Pagination{HasMore: true, NextCursor: "eyJwIjoy"})
 
 	// 3. Structured error envelope on stderr (semantic emphasis).
 	output.WriteError(os.Stderr, output.New("workspace not authenticated", output.FixableByHuman).
