@@ -98,11 +98,9 @@ func Print(w io.Writer, data any, format Format, prune Pruner) error {
 	data = applyPrune(data, prune)
 	switch format {
 	case FormatNDJSON:
-		return newEncoder(w).Encode(data)
+		return encodeJSON(w, data, false)
 	case FormatJSON:
-		enc := newEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(data)
+		return encodeJSON(w, data, true)
 	default:
 		enc, ok := lookupEncoder(format)
 		if !ok {

@@ -1,7 +1,6 @@
 package output
 
 import (
-	"encoding/json"
 	"io"
 )
 
@@ -26,26 +25,28 @@ type Pagination struct {
 
 // NDJSONWriter emits newline-delimited JSON: one bare record per line, with
 // metadata carried on @-prefixed lines. HTML escaping is disabled so URLs and
-// query strings survive intact.
+// query strings survive intact. Each line is colorized per the active color mode
+// when its target stream is a terminal (resolved through the same funnel as the
+// rest of the package).
 type NDJSONWriter struct {
-	enc *json.Encoder
+	w io.Writer
 }
 
 // NewNDJSONWriter returns an NDJSONWriter writing to w (typically os.Stdout).
 func NewNDJSONWriter(w io.Writer) *NDJSONWriter {
-	return &NDJSONWriter{enc: newEncoder(w)}
+	return &NDJSONWriter{w: w}
 }
 
 // WriteItem writes a single record as one JSON line.
 func (n *NDJSONWriter) WriteItem(item any) error {
-	return n.enc.Encode(item)
+	return encodeJSON(n.w, item, false)
 }
 
 // WriteMetaLine writes a single {key: value} metadata line. By convention key
 // is @-prefixed (e.g. "@pagination", "@unresolved") so consumers can tell
 // metadata apart from data records.
 func (n *NDJSONWriter) WriteMetaLine(key string, value any) error {
-	return n.enc.Encode(map[string]any{key: value})
+	return encodeJSON(n.w, map[string]any{key: value}, false)
 }
 
 // WritePagination writes the trailing {"@pagination": ...} line.

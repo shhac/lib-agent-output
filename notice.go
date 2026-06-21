@@ -10,5 +10,5 @@ func WriteNotice(w io.Writer, notice, hint string) {
 	if hint != "" {
 		payload["hint"] = hint
 	}
-	_ = newEncoder(w).Encode(payload)
+	_ = encodeJSON(w, payload, false)
 }

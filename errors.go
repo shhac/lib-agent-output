@@ -132,5 +132,5 @@ func WriteError(w io.Writer, err error) {
 	if !As(err, &e) {
 		e = Wrap(err, FixableByAgent)
 	}
-	_ = newEncoder(w).Encode(e)
+	_ = encodeJSON(w, e, false)
 }
