@@ -275,6 +275,116 @@ func TestColor_Roles(t *testing.T) {
 	}
 }
 
+// TestColor_YAMLColorize — YAML structure (keys, ":", "-", quote delimiters) is
+// dimmed; scalars take their value roles; the envelope fields keep their
+// semantics; and stripping the escapes reproduces the source exactly.
+func TestColor_YAMLColorize(t *testing.T) {
+	doc := "error: boom\n" +
+		"fixable_by: agent\n" +
+		"count: 4\n" +
+		"ratio: 1.5\n" +
+		"enabled: true\n" +
+		"missing: null\n" +
+		"label: 'a: b'\n" +
+		"items:\n" +
+		"    - id: w-1\n" +
+		"      tags:\n" +
+		"        - x\n" +
+		"        - y\n"
+
+	out := string(colorizeYAML([]byte(doc), defaultPainter))
+
+	if stripANSI(out) != doc {
+		t.Fatalf("stripped YAML != source\n got=%q\nwant=%q", stripANSI(out), doc)
+	}
+	for name, want := range map[string]string{
+		"key dim":        ansiDim + "count" + ansiReset,
+		"colon dim":      ansiDim + ":" + ansiReset,
+		"dash dim":       ansiDim + "-" + ansiReset,
+		"quote dim":      ansiDim + "'" + ansiReset,
+		"error boldRed":  ansiBoldRed + "boom" + ansiReset,
+		"fixable yellow": ansiYellow + "agent" + ansiReset,
+		"int cyan":       ansiCyan + "4" + ansiReset,
+		"float cyan":     ansiCyan + "1.5" + ansiReset,
+		"bool magenta":   ansiMagenta + "true" + ansiReset,
+		"null dim":       ansiDim + "null" + ansiReset,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: missing %q in:\n%s", name, want, out)
+		}
+	}
+	// An ordinary string value is left at the terminal default (no escapes).
+	if strings.Contains(out, ansiReset+"w-1") || strings.Contains(out, "[mw-1") {
+		t.Errorf("plain string value w-1 should be unstyled:\n%s", out)
+	}
+}
+
+// TestColor_YAMLViaPrint — Print colorizes FormatYAML output when color is on,
+// is byte-identical when off, and is strip-reversible either way.
+func TestColor_YAMLViaPrint(t *testing.T) {
+	// Register a YAML encoder for this test only, restoring the (unregistered)
+	// state afterwards so it can't leak into tests that rely on it being absent.
+	encodersMu.Lock()
+	prev, had := encoders[FormatYAML]
+	encodersMu.Unlock()
+	t.Cleanup(func() {
+		encodersMu.Lock()
+		if had {
+			encoders[FormatYAML] = prev
+		} else {
+			delete(encoders, FormatYAML)
+		}
+		encodersMu.Unlock()
+	})
+
+	yamlBytes := []byte("name: Alice\ncount: 3\nactive: true\n")
+	RegisterEncoder(FormatYAML, func(any) ([]byte, error) { return yamlBytes, nil })
+
+	var plain bytes.Buffer
+	withColor(t, ColorNever)
+	if err := Print(&plain, map[string]any{"x": 1}, FormatYAML, nil); err != nil {
+		t.Fatal(err)
+	}
+	if plain.String() != string(yamlBytes) {
+		t.Errorf("color off must be byte-identical: %q", plain.String())
+	}
+
+	var colored bytes.Buffer
+	withColor(t, ColorAlways)
+	if err := Print(&colored, map[string]any{"x": 1}, FormatYAML, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(colored.String(), "\x1b[") {
+		t.Fatal("expected ANSI escapes for YAML under ColorAlways")
+	}
+	if stripANSI(colored.String()) != string(yamlBytes) {
+		t.Errorf("stripped YAML != plain\n got=%q\nwant=%q", stripANSI(colored.String()), string(yamlBytes))
+	}
+}
+
+// TestColor_YAMLStripInvariantEdgeCases — the strip-to-original guarantee must
+// hold for the gnarly shapes a re-tokenizer can mangle: block scalars (whose
+// content must not be reparsed as mappings), empty flow collections, deep
+// nesting, document markers, and a value containing an inner ": ".
+func TestColor_YAMLStripInvariantEdgeCases(t *testing.T) {
+	docs := []string{
+		"description: |-\n    multi line\n    key: not-a-key here\nnext: 1\n",
+		"folded: >\n    wrapped text\n    more text\n",
+		"empty_map: {}\nempty_list: []\n",
+		"---\nname: doc\n...\n",
+		"url: http://example.test/a?b=c\nlabel: 'a: b'\n",
+		"deep:\n    a:\n        b:\n            - 1\n            - 2\n",
+		"",
+		"plain scalar with no newline",
+	}
+	for _, doc := range docs {
+		got := stripANSI(string(colorizeYAML([]byte(doc), defaultPainter)))
+		if got != doc {
+			t.Errorf("strip != source\n got=%q\nwant=%q", got, doc)
+		}
+	}
+}
+
 func TestParseColorMode(t *testing.T) {
 	for in, want := range map[string]ColorMode{"": ColorAuto, "auto": ColorAuto, "ALWAYS": ColorAlways, "never": ColorNever} {
 		got, err := ParseColorMode(in)

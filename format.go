@@ -110,6 +110,14 @@ func Print(w io.Writer, data any, format Format, prune Pruner) error {
 		if err != nil {
 			return err
 		}
+		// YAML gets the same opt-in colorization as JSON/NDJSON (structure dim,
+		// values prominent); other registered formats are written as-is. When
+		// color is off, painterFor returns nil and the bytes pass through.
+		if format == FormatYAML {
+			if p := painterFor(w); p != nil {
+				b = colorizeYAML(b, p)
+			}
+		}
 		_, err = w.Write(b)
 		return err
 	}
