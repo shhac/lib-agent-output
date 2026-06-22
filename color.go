@@ -259,20 +259,16 @@ func colorizeJSON(src []byte, p Painter) []byte {
 			out.WriteString(p.Paint(valueRole(lastKey, RoleNumber), string(src[i:j])))
 			lastKey = ""
 			i = j
-		case c == 't' || c == 'f':
+		case c == 't' || c == 'f' || c == 'n': // true / false / null
 			j := i
 			for j < n && src[j] >= 'a' && src[j] <= 'z' {
 				j++
 			}
-			out.WriteString(p.Paint(valueRole(lastKey, RoleBool), string(src[i:j])))
-			lastKey = ""
-			i = j
-		case c == 'n':
-			j := i
-			for j < n && src[j] >= 'a' && src[j] <= 'z' {
-				j++
+			role := RoleNull
+			if c != 'n' {
+				role = valueRole(lastKey, RoleBool)
 			}
-			out.WriteString(p.Paint(RoleNull, string(src[i:j])))
+			out.WriteString(p.Paint(role, string(src[i:j])))
 			lastKey = ""
 			i = j
 		default:
