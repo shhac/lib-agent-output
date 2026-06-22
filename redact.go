@@ -69,6 +69,23 @@ func Redact(v any, rule RedactRule, expose []string) any {
 	return masked
 }
 
+// Redactor adapts redaction into a Pruner-shaped transform, so it composes with
+// pruning in the same encode funnel (Print/PrintJSON/WriteList) instead of being
+// a manual pre-Print step. It applies Redact(v, rule, expose); a nil rule is a
+// pass-through. Compose it BEFORE a pruner with Chain so masked placeholders
+// aren't then pruned away as empty:
+//
+//	output.Print(w, data, format, output.Chain(output.Redactor(rule, expose), output.PruneEmpty))
+//
+// Because the funnel normalizes structs via a single JSON round-trip before
+// applying the (composed) transform, redaction now runs on that same decoded
+// tree — so a consuming CLI no longer needs its own decode-redact-print shim.
+func Redactor(rule RedactRule, expose []string) Pruner {
+	return func(v any) any {
+		return Redact(v, rule, expose)
+	}
+}
+
 func redactValue(v any, path string, rule RedactRule, exposed map[string]bool) (any, []RedactionNote) {
 	switch val := v.(type) {
 	case map[string]any:

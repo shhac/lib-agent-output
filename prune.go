@@ -13,6 +13,22 @@ import "strings"
 // applying the pruner, so you can pass typed values to them directly.
 type Pruner func(any) any
 
+// Chain composes pruners into one, applying them left to right (the first listed
+// runs first). It lets a caller pass several content-shaping policies through the
+// single prune parameter of Print/PrintJSON/WriteList — most importantly redact
+// then prune: Chain(Redactor(rule, expose), PruneEmpty). nil entries are skipped;
+// Chain() with no transforms is an identity pruner.
+func Chain(transforms ...Pruner) Pruner {
+	return func(v any) any {
+		for _, t := range transforms {
+			if t != nil {
+				v = t(v)
+			}
+		}
+		return v
+	}
+}
+
 // PruneNils drops nil values from maps, leaving empty strings, empty maps, and
 // empty slices — and nil slice elements — intact. Use it when an empty or null
 // value is meaningful and distinct from an absent one (e.g. fixed columns, or
