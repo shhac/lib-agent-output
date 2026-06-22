@@ -16,13 +16,16 @@ import (
 // output safe for machine consumers — stripping the escapes yields the exact
 // original bytes, and the disabled path never runs the colorizer at all.
 //
-// Three pieces compose, each swappable independently:
-//   - the decision (ColorMode + the injected terminal detector) → which Painter
-//   - the Painter → HOW a token's Role is styled (the mechanism seam)
-//   - the theme → the Role→style map a Painter consults
-//
-// To swap the styling mechanism (e.g. ANSI → a styling library, truecolor, or
-// HTML), implement a new Painter; the colorizer and every caller are unchanged.
+// Three concerns compose, separated so each can change without touching the
+// others:
+//   - the decision — WHETHER to color a given stream: configured at runtime via
+//     SetColorMode (the --color flag) and SetTerminalDetector (isatty injection).
+//   - the Painter — HOW a token's Role is styled: a code-level seam. The
+//     colorizer depends only on the Painter interface, so swapping the mechanism
+//     (ANSI → a styling library, truecolor, HTML) is a one-type change with no
+//     caller impact. There is deliberately no runtime SetPainter — there is one
+//     painter today; add an injector when a second one actually exists.
+//   - the theme — the Role→style map the ANSI painter consults.
 
 // Role is the semantic class of a JSON token. It is contract-aware, not merely
 // syntactic: values of the known envelope fields (error/fixable_by/hint/notice)
@@ -211,6 +214,10 @@ func encodeJSON(w io.Writer, v any, pretty bool) error {
 // newline) through untouched. Because it only inserts escapes around tokens,
 // stripping the escapes reproduces src exactly. It tracks the most recent object
 // key so a value of a known envelope field gets a semantic Role.
+//
+// src is always the output of encoding/json (canonical, well-formed), so this is
+// a lightweight re-tokenizer, not a general JSON lexer — the byte classifiers can
+// be forgiving and the default arm simply passes unrecognized bytes through.
 func colorizeJSON(src []byte, p Painter) []byte {
 	var out bytes.Buffer
 	out.Grow(len(src) + len(src)/2)
