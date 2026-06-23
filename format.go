@@ -104,7 +104,11 @@ func Print(w io.Writer, data any, format Format, prune Pruner) error {
 	default:
 		enc, ok := lookupEncoder(format)
 		if !ok {
-			return fmt.Errorf("no encoder registered for format %q; call output.RegisterEncoder", format)
+			// A missing encoder is a host-setup error (the CLI didn't
+			// RegisterEncoder), not agent-fixable input — and the package's own
+			// contract is "never an unstructured error", so return a classified
+			// *Error like every other path rather than a bare fmt.Errorf.
+			return New(fmt.Sprintf("no encoder registered for format %q; call output.RegisterEncoder", format), FixableByHuman)
 		}
 		b, err := enc(data)
 		if err != nil {
