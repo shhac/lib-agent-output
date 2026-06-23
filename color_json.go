@@ -19,7 +19,7 @@ func colorizeJSON(src []byte, p Painter) []byte {
 	for i < n {
 		c := src[i]
 		switch {
-		case c == ' ' || c == '\n' || c == '\t' || c == '\r':
+		case isJSONSpace(c):
 			out.WriteByte(c)
 			i++
 		case c == '{' || c == '}' || c == '[' || c == ']' || c == ',' || c == ':':
@@ -43,7 +43,7 @@ func colorizeJSON(src []byte, p Painter) []byte {
 			}
 			tok := src[i:j]
 			k := j
-			for k < n && (src[k] == ' ' || src[k] == '\n' || src[k] == '\t' || src[k] == '\r') {
+			for k < n && isJSONSpace(src[k]) {
 				k++
 			}
 			if k < n && src[k] == ':' { // a key
@@ -132,4 +132,11 @@ func unquote(b []byte) string {
 
 func isNumByte(c byte) bool {
 	return (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'
+}
+
+// isJSONSpace reports the ASCII whitespace encoding/json emits between tokens.
+// Shared by the token loop and the key-vs-value lookahead so the two stay in
+// sync — a mismatch would misclassify keys.
+func isJSONSpace(c byte) bool {
+	return c == ' ' || c == '\n' || c == '\t' || c == '\r'
 }

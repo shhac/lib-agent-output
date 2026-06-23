@@ -103,3 +103,13 @@ func TestWriteList_WriteErrorPropagates(t *testing.T) {
 		t.Error("WriteList should propagate a writer error")
 	}
 }
+
+// TestWriteList_MetaWriteErrorPropagates — with no items, the meta-line loop is
+// reached first, so this covers the meta write-error return arm specifically.
+func TestWriteList_MetaWriteErrorPropagates(t *testing.T) {
+	withColor(t, ColorNever)
+	meta := map[string]any{MetaKeyPagination: Pagination{HasMore: true}}
+	if err := WriteList(errWriter{}, FormatNDJSON, nil, meta, nil); err == nil {
+		t.Error("WriteList should propagate a meta-line writer error")
+	}
+}
