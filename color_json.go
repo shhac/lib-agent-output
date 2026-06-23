@@ -38,6 +38,9 @@ func colorizeJSON(src []byte, p Painter) []byte {
 				}
 				j++
 			}
+			if j > n { // a trailing backslash can push j one past EOF
+				j = n
+			}
 			tok := src[i:j]
 			k := j
 			for k < n && (src[k] == ' ' || src[k] == '\n' || src[k] == '\t' || src[k] == '\r') {
@@ -85,28 +88,39 @@ func colorizeJSON(src []byte, p Painter) []byte {
 // inner content carries contentRole. Concatenating the raw (un-styled) bytes
 // reproduces tok exactly, preserving the strip-to-original invariant.
 func paintString(out *bytes.Buffer, tok []byte, contentRole Role, p Painter) {
-	if len(tok) < 2 { // malformed; emit as-is under the content role
+	if len(tok) == 0 || tok[0] != '"' { // not a quoted token; emit as-is
 		out.WriteString(p.Paint(contentRole, string(tok)))
 		return
 	}
 	out.WriteString(p.Paint(RolePunct, `"`)) // opening quote
-	body := tok[1 : len(tok)-1]
+	// A well-formed token ends with the closing quote; a forgiving scan to EOF
+	// (unterminated string) does not — then its last byte is content, not a
+	// delimiter, and must not be dropped.
+	body := tok[1:]
+	closed := len(body) > 0 && body[len(body)-1] == '"'
+	if closed {
+		body = body[:len(body)-1]
+	}
 	i, n := 0, len(body)
 	for i < n {
 		if body[i] == '\\' && i+1 < n {
-			out.WriteString(p.Paint(RolePunct, `\`))                 // dim the escape backslash
-			out.WriteString(p.Paint(contentRole, string(body[i+1]))) // the escaped char stays content
+			out.WriteString(p.Paint(RolePunct, `\`))                     // dim the escape backslash
+			out.WriteString(p.Paint(contentRole, string(body[i+1:i+2]))) // the escaped char stays content (byte-exact, not rune-cast)
 			i += 2
 			continue
 		}
-		j := i
+		// Consume body[i] (a content byte, or a trailing lone '\') then run to
+		// the next escape. Starting at i+1 guarantees forward progress.
+		j := i + 1
 		for j < n && body[j] != '\\' {
 			j++
 		}
 		out.WriteString(p.Paint(contentRole, string(body[i:j])))
 		i = j
 	}
-	out.WriteString(p.Paint(RolePunct, `"`)) // closing quote
+	if closed {
+		out.WriteString(p.Paint(RolePunct, `"`)) // closing quote
+	}
 }
 
 func unquote(b []byte) string {
