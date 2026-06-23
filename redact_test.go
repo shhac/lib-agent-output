@@ -83,6 +83,13 @@ func TestRedactExpose(t *testing.T) {
 	if out["token"] != "t" {
 		t.Errorf("--expose all should reveal everything: %v", out)
 	}
+	// SECURITY: a substring/prefix of a key name (not a full key, nor a
+	// "prefix." path segment) must NOT widen exposure — `--expose tok` leaves a
+	// `token` field redacted. Over-exposure via prefix confusion would be a leak.
+	out = Redact(in(), rule, []string{"tok"}).(map[string]any)
+	if out["token"] != RedactedPlaceholder || out["meta"].(map[string]any)["token"] != RedactedPlaceholder {
+		t.Errorf("--expose tok (key substring) must NOT reveal token: %v", out)
+	}
 }
 
 func TestRedactValuePrefixRule(t *testing.T) {
