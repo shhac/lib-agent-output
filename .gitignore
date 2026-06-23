@@ -11,3 +11,6 @@ go.work.sum
 # OS / editor
 .DS_Store
 *.swp
+
+# local go build cache (GOCACHE)
+.cache/
