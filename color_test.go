@@ -167,6 +167,96 @@ func TestColor_StringDelimitersAndEscapes(t *testing.T) {
 	}
 }
 
+// TestColor_EscapeSequencesAreDistinct — control/unicode escapes (\n, \uXXXX)
+// get the distinct escape style, while a quote escape's backslash stays dim
+// punctuation; stripping yields the original bytes either way.
+func TestColor_EscapeSequencesAreDistinct(t *testing.T) {
+	// JSON-encodes to a string containing a \n, a \u0001 unicode escape, and a
+	// \" quote escape — exercises both escape-sequence widths and a literal escape.
+	val := "a\nb\u0001c\"d"
+	withColor(t, ColorAlways)
+	var buf bytes.Buffer
+	if err := Print(&buf, map[string]any{"k": val}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, ansiOrange+`\n`+ansiReset) {
+		t.Errorf("\\n should get the distinct escape style; got %q", out)
+	}
+	if !strings.Contains(out, ansiOrange+`\u0001`+ansiReset) {
+		t.Errorf("\\uXXXX should be painted whole in the escape style; got %q", out)
+	}
+	// The quote escape keeps the old rendering: a dim backslash, not the escape style.
+	if !strings.Contains(out, ansiDim+`\`+ansiReset) {
+		t.Errorf("a quote escape's backslash should stay dim punctuation; got %q", out)
+	}
+
+	var plain bytes.Buffer
+	withColor(t, ColorNever)
+	if err := Print(&plain, map[string]any{"k": val}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	if stripANSI(out) != plain.String() {
+		t.Errorf("stripped colored != plain\n got=%q\nwant=%q", stripANSI(out), plain.String())
+	}
+}
+
+// TestColor_URLInStringValue — an http(s) URL inside a string value gets the URL
+// style (cyan + underline); stripping yields the original.
+func TestColor_URLInStringValue(t *testing.T) {
+	withColor(t, ColorAlways)
+	var buf bytes.Buffer
+	if err := Print(&buf, map[string]any{"permalink": "https://x.test/a?b=c&d=e"}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, ansiUnderlineCyan+"https://x.test/a?b=c&d=e"+ansiReset) {
+		t.Errorf("URL value should be cyan+underline; got %q", out)
+	}
+
+	var plain bytes.Buffer
+	withColor(t, ColorNever)
+	if err := Print(&plain, map[string]any{"permalink": "https://x.test/a?b=c&d=e"}, FormatJSON, nil); err != nil {
+		t.Fatal(err)
+	}
+	if stripANSI(out) != plain.String() {
+		t.Errorf("stripped colored != plain\n got=%q\nwant=%q", stripANSI(out), plain.String())
+	}
+}
+
+// TestColor_URLWithinHintTrimsTrailingPunct — a URL embedded in a sentence keeps
+// its surrounding text under the field's role, and trailing sentence punctuation
+// stays out of the link.
+func TestColor_URLWithinHintTrimsTrailingPunct(t *testing.T) {
+	var buf bytes.Buffer
+	withColor(t, ColorAlways)
+	WriteError(&buf, New("boom", FixableByAgent).WithHint("see https://x.test/guide."))
+	out := buf.String()
+	if !strings.Contains(out, ansiUnderlineCyan+"https://x.test/guide"+ansiReset) {
+		t.Errorf("URL should be styled without the trailing period; got %q", out)
+	}
+	// The trailing period is not part of the link — it stays under the hint role.
+	if strings.Contains(out, "guide."+ansiReset) && !strings.Contains(out, ansiUnderlineCyan+"https://x.test/guide"+ansiReset) {
+		t.Errorf("the period should not be inside the URL span; got %q", out)
+	}
+	if !strings.Contains(stripANSI(out), `"hint":"see https://x.test/guide."`) {
+		t.Errorf("stripped hint changed: %q", stripANSI(out))
+	}
+}
+
+// TestColor_URLInYAMLPlainScalar — a URL emitted as a plain (unquoted) YAML scalar
+// is styled too, not just quoted JSON strings.
+func TestColor_URLInYAMLPlainScalar(t *testing.T) {
+	doc := "permalink: https://x.test/a\nname: alice\n"
+	out := string(colorizeYAML([]byte(doc), defaultPainter))
+	if stripANSI(out) != doc {
+		t.Fatalf("stripped YAML != source\n got=%q\nwant=%q", stripANSI(out), doc)
+	}
+	if !strings.Contains(out, ansiUnderlineCyan+"https://x.test/a"+ansiReset) {
+		t.Errorf("plain-scalar URL should be styled; got %q", out)
+	}
+}
+
 // TestColor_Enabled — the public predicate CLIs use for their own renderers.
 func TestColor_Enabled(t *testing.T) {
 	var tty, pipe bytes.Buffer
@@ -316,6 +406,31 @@ func TestColor_YAMLColorize(t *testing.T) {
 	// An ordinary string value is left at the terminal default (no escapes).
 	if strings.Contains(out, ansiReset+"w-1") || strings.Contains(out, "[mw-1") {
 		t.Errorf("plain string value w-1 should be unstyled:\n%s", out)
+	}
+}
+
+// TestColor_YAMLEscapeSequences — in a double-quoted scalar, control/unicode
+// escapes get the distinct escape style while a quote escape's backslash stays
+// dim; a single-quoted scalar processes no escapes, so its body stays one span.
+// Stripping reproduces the source exactly.
+func TestColor_YAMLEscapeSequences(t *testing.T) {
+	doc := `dq: "a\nb\tc\"d"` + "\n" + `sq: 'a\nb'` + "\n"
+	out := string(colorizeYAML([]byte(doc), defaultPainter))
+
+	if stripANSI(out) != doc {
+		t.Fatalf("stripped YAML != source\n got=%q\nwant=%q", stripANSI(out), doc)
+	}
+	if !strings.Contains(out, ansiOrange+`\n`+ansiReset) || !strings.Contains(out, ansiOrange+`\t`+ansiReset) {
+		t.Errorf("\\n and \\t in a double-quoted scalar should get the escape style; got %q", out)
+	}
+	if !strings.Contains(out, ansiDim+`\`+ansiReset) {
+		t.Errorf("a quote escape's backslash should stay dim; got %q", out)
+	}
+	// The single-quoted body is literal: "a\nb" survives as one contiguous run
+	// (no escape styling splitting it), which only happens when escapes aren't
+	// processed.
+	if !strings.Contains(out, `a\nb`) {
+		t.Errorf("single-quoted escapes must stay literal (one span); got %q", out)
 	}
 }
 

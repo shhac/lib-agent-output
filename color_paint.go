@@ -36,6 +36,8 @@ const (
 	RoleFixable             // the value of a "fixable_by" field
 	RoleHint                // the value of a "hint" field
 	RoleNotice              // the value of a "notice" field
+	RoleEscape              // a control/unicode string escape: \n \t \r \b \f \uXXXX
+	RoleURL                 // an http(s) URL inside a string value
 )
 
 // Painter turns a token and its Role into styled bytes. This is the swappable
@@ -52,6 +54,16 @@ const (
 	ansiYellow  = "\x1b[33m"
 	ansiCyan    = "\x1b[36m"
 	ansiMagenta = "\x1b[35m"
+	// ansiOrange marks string escape sequences so a \n reads as a distinct token
+	// rather than disappearing into the grey dim of a quote escape. It is a muted
+	// orange (256-color Orange3) — distinct from the bright yellow of hints and the
+	// red of errors. The hue is muted in itself rather than via the faint attribute,
+	// since faint on a 256-color foreground is unevenly supported across terminals.
+	ansiOrange = "\x1b[38;5;172m"
+	// ansiUnderlineCyan marks http(s) URLs inside string values — underline makes
+	// them read as a link (matching the OSC 8 hyperlink label style), and cyan
+	// distinguishes them from ordinary string content.
+	ansiUnderlineCyan = "\x1b[4;36m"
 )
 
 // defaultTheme dims the scaffolding (punctuation, keys) so ordinary string
@@ -70,6 +82,8 @@ var defaultTheme = map[Role]string{
 	RoleFixable: ansiYellow,
 	RoleHint:    ansiYellow,
 	RoleNotice:  ansiCyan,
+	RoleEscape:  ansiOrange,
+	RoleURL:     ansiUnderlineCyan,
 }
 
 type ansiPainter struct{ theme map[Role]string }

@@ -84,9 +84,13 @@ func colorizeJSON(src []byte, p Painter) []byte {
 
 // paintString renders a quoted JSON string token (including its surrounding
 // quotes) so the delimiters are scaffolding, not data: the opening/closing
-// quotes and each escape's backslash get the dim punctuation style, while the
-// inner content carries contentRole. Concatenating the raw (un-styled) bytes
-// reproduces tok exactly, preserving the strip-to-original invariant.
+// quotes and a literal escape's backslash (\" \\ \/) get the dim punctuation
+// style, while the inner content carries contentRole. A control or unicode
+// escape sequence (\n \t \r \b \f \uXXXX) is painted whole in RoleEscape so it
+// reads as a distinct token rather than disappearing into the dim, and an http(s)
+// URL within the content is painted in RoleURL (see paintContent). Concatenating
+// the raw (un-styled) bytes reproduces tok exactly, preserving the
+// strip-to-original invariant.
 func paintString(out *bytes.Buffer, tok []byte, contentRole Role, p Painter) {
 	if len(tok) == 0 || tok[0] != '"' { // not a quoted token; emit as-is
 		out.WriteString(p.Paint(contentRole, string(tok)))
@@ -104,7 +108,14 @@ func paintString(out *bytes.Buffer, tok []byte, contentRole Role, p Painter) {
 	i, n := 0, len(body)
 	for i < n {
 		if body[i] == '\\' && i+1 < n {
-			out.WriteString(p.Paint(RolePunct, `\`))                     // dim the escape backslash
+			if end, ok := escapeSeqEnd(body, i); ok {
+				// A control/unicode escape sequence — paint \n, \uXXXX, etc. whole,
+				// so it stands out as an escape rather than a dim quote escape.
+				out.WriteString(p.Paint(RoleEscape, string(body[i:end])))
+				i = end
+				continue
+			}
+			out.WriteString(p.Paint(RolePunct, `\`))                     // dim the literal escape backslash (\" \\ \/)
 			out.WriteString(p.Paint(contentRole, string(body[i+1:i+2]))) // the escaped char stays content (byte-exact, not rune-cast)
 			i += 2
 			continue
@@ -115,7 +126,7 @@ func paintString(out *bytes.Buffer, tok []byte, contentRole Role, p Painter) {
 		for j < n && body[j] != '\\' {
 			j++
 		}
-		out.WriteString(p.Paint(contentRole, string(body[i:j])))
+		paintContent(out, string(body[i:j]), contentRole, p)
 		i = j
 	}
 	if closed {
@@ -128,6 +139,24 @@ func unquote(b []byte) string {
 		return string(b[1 : len(b)-1])
 	}
 	return string(b)
+}
+
+// escapeSeqEnd reports whether body[i:] begins with a control or unicode escape
+// sequence (the caller has already checked body[i]=='\\' and i+1<n), returning
+// the index just past it. \uXXXX spans six bytes; the other control escapes
+// (\b \f \n \r \t) span two. A literal escape (\" \\ \/) returns ok=false so the
+// caller keeps the dim-backslash rendering. A truncated \u (forgiving scan of an
+// unterminated string) falls through to ok=false rather than over-reading.
+func escapeSeqEnd(body []byte, i int) (int, bool) {
+	switch body[i+1] {
+	case 'b', 'f', 'n', 'r', 't':
+		return i + 2, true
+	case 'u':
+		if i+6 <= len(body) {
+			return i + 6, true
+		}
+	}
+	return 0, false
 }
 
 func isNumByte(c byte) bool {

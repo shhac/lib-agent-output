@@ -172,11 +172,19 @@ func writeYAMLScalar(out *bytes.Buffer, keyName, value string, p Painter) {
 		role := valueRole(keyName, RoleString)
 		if len(value) >= 2 && value[len(value)-1] == value[0] {
 			out.WriteString(p.Paint(RolePunct, value[:1]))
-			out.WriteString(p.Paint(role, value[1:len(value)-1]))
+			body := value[1 : len(value)-1]
+			if value[0] == '"' {
+				// Only double-quoted scalars process backslash escapes; single-quoted
+				// YAML takes them literally (its sole escape is '' → '), so its body
+				// stays one span (still URL-scanned).
+				paintYAMLDQBody(out, body, role, p)
+			} else {
+				paintContent(out, body, role, p)
+			}
 			out.WriteString(p.Paint(RolePunct, value[len(value)-1:]))
 			return
 		}
-		out.WriteString(p.Paint(role, value)) // unterminated; one span
+		paintContent(out, value, role, p) // unterminated; one span
 		return
 	}
 	switch value {
@@ -191,8 +199,69 @@ func writeYAMLScalar(out *bytes.Buffer, keyName, value string, p Painter) {
 		if isYAMLNumber(value) {
 			role = valueRole(keyName, RoleNumber)
 		}
-		out.WriteString(p.Paint(role, value))
+		paintContent(out, value, role, p)
 	}
+}
+
+// paintYAMLDQBody paints the inner content of a double-quoted YAML scalar the
+// same way JSON paintString does: control/unicode escape sequences in RoleEscape
+// (so a \n stands out as an escape), a literal escape's backslash (\" \\ \/) dim,
+// and ordinary content under role. Concatenating the raw bytes reproduces body
+// exactly, preserving the strip-to-original invariant.
+func paintYAMLDQBody(out *bytes.Buffer, body string, role Role, p Painter) {
+	i, n := 0, len(body)
+	for i < n {
+		if body[i] == '\\' && i+1 < n {
+			if end, ok := yamlEscapeEnd(body, i); ok {
+				out.WriteString(p.Paint(RoleEscape, body[i:end]))
+				i = end
+				continue
+			}
+			out.WriteString(p.Paint(RolePunct, `\`))      // dim the literal escape backslash
+			out.WriteString(p.Paint(role, body[i+1:i+2])) // the escaped char stays content
+			i += 2
+			continue
+		}
+		j := i + 1
+		for j < n && body[j] != '\\' {
+			j++
+		}
+		paintContent(out, body[i:j], role, p)
+		i = j
+	}
+}
+
+// yamlEscapeEnd reports whether body[i:] begins with a YAML double-quoted
+// control/unicode escape (the caller has checked body[i]=='\\' and i+1<n),
+// returning the index just past it. YAML's double-quoted grammar is richer than
+// JSON's: hex escapes \xXX, \uXXXX, \UXXXXXXXX span 2/4/8 digits, and the named
+// escapes (\0 \a \b \t \n \v \f \r \e \N \_ \L \P and \<space>) span two. The
+// literal escapes \" \\ \/ return ok=false so they keep the dim-backslash
+// rendering; a truncated hex escape (unterminated scan) also returns false.
+func yamlEscapeEnd(body string, i int) (int, bool) {
+	switch body[i+1] {
+	case '"', '\\', '/':
+		return 0, false
+	case 'x':
+		return hexEscapeEnd(body, i, 2)
+	case 'u':
+		return hexEscapeEnd(body, i, 4)
+	case 'U':
+		return hexEscapeEnd(body, i, 8)
+	case '0', 'a', 'b', 't', 'n', 'v', 'f', 'r', 'e', 'N', '_', 'L', 'P', ' ':
+		return i + 2, true
+	}
+	return 0, false
+}
+
+// hexEscapeEnd returns the index past a \x/\u/\U escape of the given digit count,
+// or ok=false when the token would run past the end of body.
+func hexEscapeEnd(body string, i, digits int) (int, bool) {
+	end := i + 2 + digits
+	if end > len(body) {
+		return 0, false
+	}
+	return end, true
 }
 
 func isYAMLNumber(s string) bool {
