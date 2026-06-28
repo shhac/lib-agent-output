@@ -62,6 +62,7 @@ if err := root.Execute(); err != nil {
 | `ndjson.go` | `NDJSONWriter` (`WriteItem`, `WriteMetaLine`, `WritePagination`), `Pagination`, `MetaKeyPagination` |
 | `errors.go` | `Error`, `FixableBy`, `FixableByStatus`, `New`/`Newf`/`Wrap`/`WithHint`/`WithHints`/`WithCause`/`WithRetryAfter`/`As`, `WriteError` |
 | `notice.go` | `WriteNotice` |
+| `fileref.go` | `FileRef` (the `@type:file` atom) + `FileRoot`, `NewFileRef`/`FileRefAt`/`IsFileRef`, `SafeResolve` (path-traversal/symlink containment), `FileRefFor` (abs→root-relative reverse-map), `SniffMimeType` — shared primitives for scoped agent file access, consumed by `lib-agent-mcp`'s `fs` tool |
 
 **Opt-in presentation helpers** (shared, zero-dep, domain-free — so a CLI can
 delete its hand-rolled `internal/output/`):
