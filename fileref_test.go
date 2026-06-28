@@ -25,6 +25,29 @@ func TestNewFileRefNormalises(t *testing.T) {
 	}
 }
 
+func TestFileRefAt(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "downloads", "F1.png"), "imgdata")
+
+	ref, err := FileRefAt("cache", "downloads/F1.png", filepath.Join(dir, "downloads", "F1.png"))
+	if err != nil {
+		t.Fatalf("FileRefAt: %v", err)
+	}
+	if ref.Root != "cache" || ref.Path != "downloads/F1.png" || ref.Name != "F1.png" {
+		t.Errorf("ref = %+v, want cache / downloads/F1.png / F1.png", ref)
+	}
+	if ref.Size != int64(len("imgdata")) {
+		t.Errorf("size = %d, want %d", ref.Size, len("imgdata"))
+	}
+	if ref.MimeType == "" {
+		t.Error("expected a mimetype from the .png extension")
+	}
+
+	if _, err := FileRefAt("cache", "missing", filepath.Join(dir, "missing")); err == nil {
+		t.Error("FileRefAt on a missing file should error")
+	}
+}
+
 func TestIsFileRef(t *testing.T) {
 	yes := map[string]any{"@type": "file", "root": "cache", "path": "a.png"}
 	if !IsFileRef(yes) {
