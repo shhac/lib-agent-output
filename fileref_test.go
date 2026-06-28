@@ -42,6 +42,34 @@ func TestIsFileRef(t *testing.T) {
 	}
 }
 
+func TestFileRefFor(t *testing.T) {
+	roots := []FileRoot{
+		{Name: "cache", Path: "/home/u/.cache/app"},
+		{Name: "downloads", Path: "/home/u/.cache/app/downloads"}, // nested → deepest wins
+	}
+
+	ref, ok := FileRefFor(roots, "/home/u/.cache/app/downloads/F1.png")
+	if !ok {
+		t.Fatal("FileRefFor missed a path under a root")
+	}
+	if ref.Root != "downloads" || ref.Path != "F1.png" {
+		t.Errorf("deepest-root mapping = %+v, want root downloads path F1.png", ref)
+	}
+	if ref.MimeType == "" {
+		t.Error("expected a mimetype from the .png extension")
+	}
+
+	if r2, _ := FileRefFor(roots, "/home/u/.cache/app/users.json"); r2.Root != "cache" || r2.Path != "users.json" {
+		t.Errorf("top-root mapping = %+v, want root cache path users.json", r2)
+	}
+
+	for _, p := range []string{"/etc/passwd", "relative/path.txt", "/home/u/.cache/app"} {
+		if _, ok := FileRefFor(roots, p); ok {
+			t.Errorf("FileRefFor(%q) matched, want no match", p)
+		}
+	}
+}
+
 func TestSafeResolveAllowsInRoot(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "downloads", "F1.png"), "img")

@@ -75,6 +75,40 @@ func IsFileRef(obj map[string]any) bool {
 	return hasRoot && hasPath
 }
 
+// FileRefFor reverse-maps an absolute host path to a FileRef under the deepest
+// configured root that contains it, so a tool's raw output path can be turned
+// into a fetchable, host-free reference. It reports false when abs is not
+// absolute or lies under no root. Unlike SafeResolve this is a pure string
+// mapping (no symlink resolution): it describes where a path sits for display,
+// while SafeResolve enforces the security boundary at fetch time.
+func FileRefFor(roots []FileRoot, abs string) (FileRef, bool) {
+	p := filepath.Clean(abs)
+	if !filepath.IsAbs(p) {
+		return FileRef{}, false
+	}
+	bestRel, bestRoot, bestLen := "", "", -1
+	for _, r := range roots {
+		rootClean := filepath.Clean(r.Path)
+		rel, err := filepath.Rel(rootClean, p)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+			continue // the root itself, or outside it
+		}
+		if len(rootClean) > bestLen { // deepest (longest) containing root wins
+			bestLen, bestRel, bestRoot = len(rootClean), rel, r.Name
+		}
+	}
+	if bestLen < 0 {
+		return FileRef{}, false
+	}
+	ref := NewFileRef(bestRoot, bestRel)
+	ref.MimeType = mime.TypeByExtension(path.Ext(bestRel))
+	return ref, true
+}
+
 // SafeResolve joins rel under root and guarantees the result stays inside it —
 // the single containment chokepoint every file verb must route through. It
 // rejects absolute inputs and any parent-directory (..) escape, then resolves
